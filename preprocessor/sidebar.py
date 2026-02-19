@@ -33,7 +33,7 @@ def _section_label(text: str) -> QLabel:
 def _separator() -> QWidget:
     sep = QWidget()
     sep.setFixedHeight(1)
-    sep.setStyleSheet("background: #161c2a;")
+    sep.setProperty("separator", True)
     return sep
 
 
@@ -55,9 +55,7 @@ class Sidebar(QScrollArea):
 
         # ── App title ─────────────────────────────────────────────────────────
         title = QLabel("Race Photo\nPreprocessor")
-        title.setStyleSheet(
-            "font-size: 14px; font-weight: 700; color: #f97316; letter-spacing: 0.3px;"
-        )
+        title.setProperty("title", True)
         root.addWidget(title)
         root.addWidget(_separator())
 
@@ -111,7 +109,7 @@ class Sidebar(QScrollArea):
 
         # Resolved path preview
         self._output_preview = QLabel()
-        self._output_preview.setStyleSheet("font-size: 11px; color: #374151;")
+        self._output_preview.setProperty("hint", True)
         self._output_preview.setWordWrap(True)
         root.addWidget(self._output_preview)
         self._update_output_preview()
@@ -154,7 +152,7 @@ class Sidebar(QScrollArea):
         footer_row.setContentsMargins(0, 0, 0, 0)
 
         ver = QLabel("v0.1.0")
-        ver.setStyleSheet("font-size: 11px; color: #2a3040;")
+        ver.setProperty("hint", True)
         footer_row.addWidget(ver)
         footer_row.addStretch()
 

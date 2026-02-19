@@ -1,0 +1,174 @@
+"""Left-hand sidebar: event config, output config, store API config."""
+from __future__ import annotations
+
+from pathlib import Path
+
+from PySide6.QtWidgets import (
+    QFileDialog,
+    QFormLayout,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QPushButton,
+    QScrollArea,
+    QSizePolicy,
+    QSpacerItem,
+    QVBoxLayout,
+    QWidget,
+)
+
+import preprocessor.config as cfg
+
+
+def _section_label(text: str) -> QLabel:
+    lbl = QLabel(text.upper())
+    lbl.setProperty("heading", True)
+    return lbl
+
+
+def _separator() -> QWidget:
+    sep = QWidget()
+    sep.setFixedHeight(1)
+    sep.setStyleSheet("background: #1f2937;")
+    return sep
+
+
+class Sidebar(QScrollArea):
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setWidgetResizable(True)
+        self.setHorizontalScrollBarPolicy(
+            self.horizontalScrollBarPolicy().ScrollBarAlwaysOff  # type: ignore[attr-defined]
+        )
+        self.setFrameShape(self.Shape.NoFrame)
+
+        content = QWidget()
+        self.setWidget(content)
+        root = QVBoxLayout(content)
+        root.setContentsMargins(16, 16, 16, 16)
+        root.setSpacing(12)
+
+        # ── App title ─────────────────────────────────────────────────────────
+        title = QLabel("Race Photo\nPreprocessor")
+        title.setStyleSheet(
+            "font-size: 15px; font-weight: 700; color: #f97316; line-height: 1.3;"
+        )
+        root.addWidget(title)
+        root.addWidget(_separator())
+
+        # ── Event ─────────────────────────────────────────────────────────────
+        root.addWidget(_section_label("Event"))
+
+        form_event = QFormLayout()
+        form_event.setLabelAlignment(
+            form_event.labelAlignment()  # type: ignore[arg-type]
+        )
+        form_event.setSpacing(8)
+        form_event.setContentsMargins(0, 0, 0, 0)
+
+        self.slug_input = QLineEdit(cfg.get_event_slug())
+        self.slug_input.setPlaceholderText("e.g. bmc-indoors-2025")
+        self.slug_input.editingFinished.connect(
+            lambda: cfg.set_event_slug(self.slug_input.text().strip())
+        )
+        form_event.addRow("Slug", self.slug_input)
+
+        self.name_input = QLineEdit(cfg.get_event_name())
+        self.name_input.setPlaceholderText("e.g. BMC Indoors 2025")
+        self.name_input.editingFinished.connect(
+            lambda: cfg.set_event_name(self.name_input.text().strip())
+        )
+        form_event.addRow("Name", self.name_input)
+
+        root.addLayout(form_event)
+        root.addWidget(_separator())
+
+        # ── Output ────────────────────────────────────────────────────────────
+        root.addWidget(_section_label("Output"))
+
+        self.output_input = QLineEdit(cfg.get_output_root())
+        self.output_input.setPlaceholderText("Select output folder…")
+        self.output_input.setReadOnly(True)
+        self.output_input.editingFinished.connect(
+            lambda: cfg.set_output_root(self.output_input.text().strip())
+        )
+
+        browse_btn = QPushButton("Browse…")
+        browse_btn.setProperty("secondary", True)
+        browse_btn.setFixedWidth(80)
+        browse_btn.clicked.connect(self._browse_output)
+
+        output_row = QHBoxLayout()
+        output_row.setSpacing(6)
+        output_row.addWidget(self.output_input)
+        output_row.addWidget(browse_btn)
+        root.addLayout(output_row)
+
+        # Resolved path preview
+        self._output_preview = QLabel()
+        self._output_preview.setStyleSheet("font-size: 11px; color: #6b7280;")
+        self._output_preview.setWordWrap(True)
+        root.addWidget(self._output_preview)
+        self._update_output_preview()
+        self.slug_input.editingFinished.connect(self._update_output_preview)
+        self.output_input.textChanged.connect(self._update_output_preview)
+
+        root.addWidget(_separator())
+
+        # ── Store API ─────────────────────────────────────────────────────────
+        root.addWidget(_section_label("Store API"))
+
+        form_api = QFormLayout()
+        form_api.setSpacing(8)
+        form_api.setContentsMargins(0, 0, 0, 0)
+
+        self.store_url_input = QLineEdit(cfg.get_store_url())
+        self.store_url_input.setPlaceholderText("http://localhost:8081")
+        self.store_url_input.editingFinished.connect(
+            lambda: cfg.set_store_url(self.store_url_input.text().strip())
+        )
+        form_api.addRow("URL", self.store_url_input)
+
+        self.store_token_input = QLineEdit(cfg.get_store_token())
+        self.store_token_input.setPlaceholderText("admin token")
+        self.store_token_input.setEchoMode(QLineEdit.EchoMode.Password)
+        self.store_token_input.editingFinished.connect(
+            lambda: cfg.set_store_token(self.store_token_input.text().strip())
+        )
+        form_api.addRow("Token", self.store_token_input)
+
+        root.addLayout(form_api)
+
+        # ── Spacer ────────────────────────────────────────────────────────────
+        root.addSpacerItem(
+            QSpacerItem(0, 0, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding)
+        )
+
+        # Version label at bottom
+        ver = QLabel("v0.1.0")
+        ver.setStyleSheet("font-size: 11px; color: #374151;")
+        root.addWidget(ver)
+
+    # ── Helpers ───────────────────────────────────────────────────────────────
+
+    def _browse_output(self) -> None:
+        start = self.output_input.text() or str(Path.home())
+        folder = QFileDialog.getExistingDirectory(self, "Select output root", start)
+        if folder:
+            self.output_input.setText(folder)
+            cfg.set_output_root(folder)
+            self._update_output_preview()
+
+    def _update_output_preview(self) -> None:
+        root = self.output_input.text().strip()
+        slug = self.slug_input.text().strip()
+        if root and slug:
+            proofs = str(Path(root) / "proofs" / slug)
+            originals = str(Path(root) / "originals" / slug)
+            self._output_preview.setText(
+                f"proofs/…/{slug}/\noriginals/…/{slug}/"
+            )
+        elif root:
+            self._output_preview.setText("Enter event slug to see resolved paths")
+        else:
+            self._output_preview.setText("")

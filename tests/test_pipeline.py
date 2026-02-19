@@ -8,6 +8,8 @@ import pytest
 from preprocessor.pipeline import ProcessConfig, ProcessResult, process_photo
 
 
+# ── Smoke / basic behaviour ───────────────────────────────────────────────────
+
 def test_process_creates_both_outputs(photo_folder: Path, tmp_path: Path) -> None:
     output = tmp_path / "output"
     config = ProcessConfig(event_slug="test-event", output_root=output)
@@ -26,11 +28,9 @@ def test_process_skip_existing(photo_folder: Path, tmp_path: Path) -> None:
     config = ProcessConfig(event_slug="test-event", output_root=output, skip_existing=True)
     source = str(photo_folder / "DSC_001.jpg")
 
-    # First run: process
     r1 = process_photo(source, config)
     assert r1.success and not r1.skipped
 
-    # Second run: skip
     r2 = process_photo(source, config)
     assert r2.success and r2.skipped
 
@@ -61,5 +61,104 @@ def test_photo_id_is_stem(photo_folder: Path, tmp_path: Path) -> None:
 
     assert (output / "proofs" / "my-event" / "DSC_002.jpg").exists()
     assert (output / "originals" / "my-event" / "DSC_002.jpg").exists()
-    # No unexpected files
     assert not (output / "proofs" / "my-event" / "DSC_001.jpg").exists()
+
+
+# ── Phase 3 — Pillow pipeline ─────────────────────────────────────────────────
+
+def test_proof_is_resized(large_jpeg: Path, tmp_path: Path) -> None:
+    """A 3000×2000 source must produce a proof with longest edge == 1600."""
+    from PIL import Image
+
+    output = tmp_path / "output"
+    config = ProcessConfig(event_slug="ev", output_root=output, proof_size=1600)
+    result = process_photo(str(large_jpeg), config)
+
+    assert result.success
+    proof = output / "proofs" / "ev" / "large.jpg"
+    img = Image.open(proof)
+    assert max(img.width, img.height) == 1600
+    assert img.width == 1600
+    assert abs(img.height - 1067) <= 2  # 2000 * 1600/3000 ≈ 1067
+
+
+def test_original_not_resized(large_jpeg: Path, tmp_path: Path) -> None:
+    """Original must be copied as-is, not resized."""
+    from PIL import Image
+
+    output = tmp_path / "output"
+    config = ProcessConfig(event_slug="ev", output_root=output, proof_size=1600)
+    process_photo(str(large_jpeg), config)
+
+    original = output / "originals" / "ev" / "large.jpg"
+    img = Image.open(original)
+    assert img.width == 3000
+    assert img.height == 2000
+
+
+def test_small_image_not_upscaled(photo_folder: Path, tmp_path: Path) -> None:
+    """Images smaller than proof_size must not be upscaled."""
+    from PIL import Image
+
+    output = tmp_path / "output"
+    config = ProcessConfig(event_slug="ev", output_root=output, proof_size=1600)
+    source = str(photo_folder / "DSC_001.jpg")
+    process_photo(source, config)
+
+    proof = output / "proofs" / "ev" / "DSC_001.jpg"
+    img = Image.open(proof)
+    assert img.width == 1
+    assert img.height == 1
+
+
+def test_watermark_changes_pixels(large_jpeg: Path, tmp_path: Path) -> None:
+    """Proof with watermark must differ from proof without watermark."""
+    from PIL import Image
+    import numpy as np
+
+    out_wm  = tmp_path / "wm"
+    out_now = tmp_path / "nowm"
+
+    config_wm = ProcessConfig(
+        event_slug="ev", output_root=out_wm,
+        watermark_text="© Test", watermark_opacity=100,
+    )
+    config_no = ProcessConfig(
+        event_slug="ev", output_root=out_now,
+        watermark_text="",
+    )
+    process_photo(str(large_jpeg), config_wm)
+    process_photo(str(large_jpeg), config_no)
+
+    arr_wm = np.array(Image.open(out_wm  / "proofs" / "ev" / "large.jpg"))
+    arr_no = np.array(Image.open(out_now / "proofs" / "ev" / "large.jpg"))
+    assert not (arr_wm == arr_no).all(), "Watermarked proof must differ from unwatermarked"
+
+
+def test_watermark_position_bottom_right(large_jpeg: Path, tmp_path: Path) -> None:
+    """Bottom-right region should be brighter (white text) in watermarked proof."""
+    from PIL import Image
+    import numpy as np
+
+    out_wm  = tmp_path / "wm"
+    out_now = tmp_path / "nowm"
+
+    config_wm = ProcessConfig(
+        event_slug="ev", output_root=out_wm,
+        watermark_text="© Test", watermark_opacity=100,
+        watermark_position="bottom-right",
+    )
+    config_no = ProcessConfig(
+        event_slug="ev", output_root=out_now,
+        watermark_text="",
+    )
+    process_photo(str(large_jpeg), config_wm)
+    process_photo(str(large_jpeg), config_no)
+
+    wm = np.array(Image.open(out_wm  / "proofs" / "ev" / "large.jpg"), dtype=float)
+    no = np.array(Image.open(out_now / "proofs" / "ev" / "large.jpg"), dtype=float)
+
+    h, w = wm.shape[:2]
+    y0, x0 = int(h * 0.85), int(w * 0.70)
+    diff = (wm[y0:, x0:] - no[y0:, x0:]).mean()
+    assert diff > 0, "Watermark region should be brighter in watermarked proof"

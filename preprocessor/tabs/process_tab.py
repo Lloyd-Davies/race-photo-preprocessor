@@ -1,4 +1,4 @@
-"""Process tab — batch proof generation with live progress."""
+"""Process tab — batch proof generation with live progress and preview."""
 from __future__ import annotations
 
 import time
@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QColor
+from PySide6.QtGui import QColor, QPixmap
 from PySide6.QtWidgets import (
     QHBoxLayout,
     QHeaderView,
@@ -27,10 +27,12 @@ if TYPE_CHECKING:
     from preprocessor.main_window import MainWindow
 
 _STATUS_ICONS = {
-    "ok":      ("✓", "#22c55e"),   # green
-    "skipped": ("⚡", "#f97316"),  # orange
-    "error":   ("✗", "#ef4444"),   # red
+    "ok":      ("✔", "#22c55e"),
+    "skipped": ("⚡", "#f59e0b"),
+    "error":   ("✗", "#ef4444"),
 }
+
+_PLACEHOLDER_STYLE = "color: #4b5563; font-size: 12px;"
 
 
 class ProcessTab(QWidget):
@@ -40,17 +42,17 @@ class ProcessTab(QWidget):
         self._worker: ProcessWorker | None = None
         self._start_time: float = 0.0
         self._total: int = 0
+        self._config: ProcessConfig | None = None
 
         root = QVBoxLayout(self)
         root.setContentsMargins(16, 16, 16, 16)
         root.setSpacing(10)
 
-        # ── Toolbar ──────────────────────────────────────────────────────────
+        # ── Toolbar ───────────────────────────────────────────────────────────
         toolbar = QHBoxLayout()
         toolbar.setSpacing(8)
 
         self._start_btn = QPushButton("▶  Start Processing")
-        self._start_btn.setObjectName("primary")
         self._start_btn.setFixedHeight(34)
         self._start_btn.clicked.connect(self._start)
 
@@ -64,30 +66,39 @@ class ProcessTab(QWidget):
         toolbar.addStretch()
 
         self._info_label = QLabel("Select images in the Import tab, then press Start.")
-        self._info_label.setStyleSheet("color: #374151; font-size: 12px;")
+        self._info_label.setProperty("hint", True)
         toolbar.addWidget(self._info_label)
 
         root.addLayout(toolbar)
 
-        # ── Progress bar ─────────────────────────────────────────────────────
+        # ── Progress bar ──────────────────────────────────────────────────────
         self._progress = QProgressBar()
         self._progress.setFixedHeight(8)
         self._progress.setTextVisible(False)
         self._progress.hide()
         root.addWidget(self._progress)
 
-        # ── Status line ──────────────────────────────────────────────────────
+        # ── Status line ───────────────────────────────────────────────────────
         status_row = QHBoxLayout()
         self._current_label = QLabel()
-        self._current_label.setStyleSheet("color: #6b7280; font-size: 12px;")
+        self._current_label.setProperty("hint", True)
         self._eta_label = QLabel()
-        self._eta_label.setStyleSheet("color: #374151; font-size: 12px;")
+        self._eta_label.setProperty("hint", True)
         status_row.addWidget(self._current_label)
         status_row.addStretch()
         status_row.addWidget(self._eta_label)
         root.addLayout(status_row)
 
-        # ── Results table ────────────────────────────────────────────────────
+        # ── Body: results table (left) + preview panel (right) ────────────────
+        body = QHBoxLayout()
+        body.setSpacing(12)
+        root.addLayout(body)
+
+        # Left column: table + summary
+        left_col = QVBoxLayout()
+        left_col.setSpacing(6)
+        body.addLayout(left_col, stretch=1)
+
         self._table = QTableWidget(0, 3)
         self._table.setHorizontalHeaderLabels([" ", "File", "Message"])
         self._table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)
@@ -103,14 +114,41 @@ class ProcessTab(QWidget):
         self._table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self._table.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self._table.verticalHeader().setDefaultSectionSize(22)
-        root.addWidget(self._table)
+        left_col.addWidget(self._table)
 
-        # ── Summary footer ───────────────────────────────────────────────────
         self._summary = QLabel()
-        self._summary.setStyleSheet("color: #4b5563; font-size: 12px; padding: 2px 0;")
-        root.addWidget(self._summary)
+        self._summary.setProperty("hint", True)
+        left_col.addWidget(self._summary)
 
-    # ── Slots ────────────────────────────────────────────────────────────────
+        # Right column: live proof preview
+        right_col = QVBoxLayout()
+        right_col.setSpacing(4)
+        body.addLayout(right_col, stretch=0)
+
+        preview_heading = QLabel("LAST PROOF")
+        preview_heading.setProperty("heading", True)
+        right_col.addWidget(preview_heading)
+
+        self._preview_label = QLabel()
+        self._preview_label.setFixedSize(240, 200)
+        self._preview_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._preview_label.setProperty("previewPane", True)
+        self._preview_label.setStyleSheet(
+            "QLabel[previewPane='true'] { border-radius: 6px; }"
+        )
+        self._preview_label.setText("—")
+        right_col.addWidget(self._preview_label)
+
+        self._preview_name = QLabel()
+        self._preview_name.setProperty("hint", True)
+        self._preview_name.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._preview_name.setWordWrap(True)
+        self._preview_name.setFixedWidth(240)
+        right_col.addWidget(self._preview_name)
+
+        right_col.addStretch()
+
+    # ── Slots ─────────────────────────────────────────────────────────────────
 
     def _start(self) -> None:
         paths = self._window.get_selected_images()
@@ -129,7 +167,7 @@ class ProcessTab(QWidget):
             self._info_label.setText("Output folder is not set — configure it in the sidebar.")
             return
 
-        config = ProcessConfig(
+        self._config = ProcessConfig(
             event_slug=slug,
             output_root=Path(output_root),
             watermark_text=cfg.get_watermark_text(),
@@ -140,9 +178,10 @@ class ProcessTab(QWidget):
             skip_existing=cfg.get_skip_existing(),
         )
 
-        # Reset UI
         self._table.setRowCount(0)
         self._summary.clear()
+        self._preview_label.setText("—")
+        self._preview_name.clear()
         self._total = len(paths)
         self._start_time = time.monotonic()
         self._progress.setMaximum(self._total)
@@ -152,7 +191,7 @@ class ProcessTab(QWidget):
         self._stop_btn.setEnabled(True)
         self._info_label.clear()
 
-        self._worker = ProcessWorker(paths, config)
+        self._worker = ProcessWorker(paths, self._config)
         self._worker.progress.connect(self._on_progress)
         self._worker.file_done.connect(self._on_file_done)
         self._worker.finished.connect(self._on_finished)
@@ -206,6 +245,32 @@ class ProcessTab(QWidget):
         self._table.setItem(row, 1, file_item)
         self._table.setItem(row, 2, msg_item)
         self._table.scrollToBottom()
+
+        # Update live preview with the proof just generated
+        if result.success and not result.skipped and self._config is not None:
+            photo_id = Path(result.source).stem
+            proof_path = (
+                self._config.output_root
+                / "proofs"
+                / self._config.event_slug
+                / f"{photo_id}.jpg"
+            )
+            self._load_preview(proof_path)
+
+    def _load_preview(self, path: Path) -> None:
+        if not path.exists():
+            return
+        px = QPixmap(str(path))
+        if px.isNull():
+            return
+        scaled = px.scaled(
+            self._preview_label.width(),
+            self._preview_label.height(),
+            Qt.AspectRatioMode.KeepAspectRatio,
+            Qt.TransformationMode.SmoothTransformation,
+        )
+        self._preview_label.setPixmap(scaled)
+        self._preview_name.setText(path.name)
 
     def _on_finished(self, results: list[ProcessResult]) -> None:
         self._progress.setValue(self._total)

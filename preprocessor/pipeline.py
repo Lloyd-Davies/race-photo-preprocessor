@@ -29,10 +29,10 @@ class ProcessResult:
 
 def process_photo(source: str, config: ProcessConfig) -> ProcessResult:
     """
-    Process a single photo: copy as original, generate watermarked proof.
+    Process a single photo: copy as original, generate resized/watermarked proof.
 
-    Phase 1: copy-only (no watermark).
-    Phase 3+: full pipeline with resize + watermark.
+    Original: pixel-perfect copy, EXIF preserved.
+    Proof: resized to longest edge ≤ proof_size, EXIF stripped, watermark applied.
     """
     import shutil
 
@@ -53,11 +53,31 @@ def process_photo(source: str, config: ProcessConfig) -> ProcessResult:
         return ProcessResult(source=source, success=True, skipped=True)
 
     try:
-        # Original: straight copy
+        # Original: preserved as pixel-perfect copy
         shutil.copy2(str(source_path), str(original_dest))
 
-        # Proof: copy for now; Phase 3 will add resize + watermark
-        shutil.copy2(str(source_path), str(proof_dest))
+        # Proof: resize + strip EXIF + watermark
+        from PIL import Image
+        from preprocessor.watermark import apply_watermark
+
+        img = Image.open(source_path)
+
+        # Resize so longest edge ≤ proof_size (preserves aspect ratio)
+        if max(img.width, img.height) > config.proof_size:
+            img = img.copy()
+            img.thumbnail((config.proof_size, config.proof_size), Image.LANCZOS)
+
+        # Apply watermark
+        img = apply_watermark(img, config)
+
+        # Save without EXIF at target quality
+        img.save(
+            str(proof_dest),
+            format="JPEG",
+            quality=config.proof_quality,
+            optimize=True,
+            progressive=True,
+        )
 
     except Exception as exc:
         return ProcessResult(source=source, success=False, error=str(exc))

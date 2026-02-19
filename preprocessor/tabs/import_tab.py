@@ -130,7 +130,7 @@ class ImportTab(QWidget):
         toolbar.addWidget(self._folder_btn)
 
         self._folder_label = QLabel("No folder selected")
-        self._folder_label.setStyleSheet("color: #6b7280; font-size: 12px;")
+        self._folder_label.setStyleSheet("color: #4b5563; font-size: 12px;")
         self._folder_label.setWordWrap(False)
         toolbar.addWidget(self._folder_label, 1)
 
@@ -148,11 +148,11 @@ class ImportTab(QWidget):
 
         # ── Drop hint ─────────────────────────────────────────────────────────
         self._drop_hint = QLabel(
-            "Drop a folder of JPEGs here, or use Open Folder above"
+            "Drop a folder of JPEGs here,\nor use Open Folder above"
         )
         self._drop_hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._drop_hint.setStyleSheet(
-            "color: #4b5563; font-size: 14px; padding: 60px 0;"
+            "color: #2a3040; font-size: 15px; padding: 60px 0; line-height: 1.6;"
         )
 
         # ── Grid ──────────────────────────────────────────────────────────────
@@ -178,12 +178,12 @@ class ImportTab(QWidget):
         # ── Footer ────────────────────────────────────────────────────────────
         footer = QHBoxLayout()
         self._count_label = QLabel("0 images selected")
-        self._count_label.setStyleSheet("color: #6b7280; font-size: 12px;")
+        self._count_label.setStyleSheet("color: #4b5563; font-size: 12px;")
         footer.addWidget(self._count_label)
         footer.addStretch()
 
         self._total_label = QLabel()
-        self._total_label.setStyleSheet("color: #6b7280; font-size: 12px;")
+        self._total_label.setStyleSheet("color: #374151; font-size: 12px;")
         footer.addWidget(self._total_label)
 
         root.addLayout(footer)

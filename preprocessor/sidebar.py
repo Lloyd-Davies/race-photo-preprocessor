@@ -16,8 +16,12 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+from typing import TYPE_CHECKING
 
 import preprocessor.config as cfg
+
+if TYPE_CHECKING:
+    from preprocessor.main_window import MainWindow
 
 
 def _section_label(text: str) -> QLabel:
@@ -29,13 +33,14 @@ def _section_label(text: str) -> QLabel:
 def _separator() -> QWidget:
     sep = QWidget()
     sep.setFixedHeight(1)
-    sep.setStyleSheet("background: #1f2937;")
+    sep.setStyleSheet("background: #161c2a;")
     return sep
 
 
 class Sidebar(QScrollArea):
-    def __init__(self, parent: QWidget | None = None) -> None:
+    def __init__(self, parent: QWidget | None = None, window: "MainWindow | None" = None) -> None:
         super().__init__(parent)
+        self._window = window
         self.setWidgetResizable(True)
         self.setHorizontalScrollBarPolicy(
             self.horizontalScrollBarPolicy().ScrollBarAlwaysOff  # type: ignore[attr-defined]
@@ -51,7 +56,7 @@ class Sidebar(QScrollArea):
         # ── App title ─────────────────────────────────────────────────────────
         title = QLabel("Race Photo\nPreprocessor")
         title.setStyleSheet(
-            "font-size: 15px; font-weight: 700; color: #f97316; line-height: 1.3;"
+            "font-size: 14px; font-weight: 700; color: #f97316; letter-spacing: 0.3px;"
         )
         root.addWidget(title)
         root.addWidget(_separator())
@@ -106,7 +111,7 @@ class Sidebar(QScrollArea):
 
         # Resolved path preview
         self._output_preview = QLabel()
-        self._output_preview.setStyleSheet("font-size: 11px; color: #6b7280;")
+        self._output_preview.setStyleSheet("font-size: 11px; color: #374151;")
         self._output_preview.setWordWrap(True)
         root.addWidget(self._output_preview)
         self._update_output_preview()
@@ -144,13 +149,33 @@ class Sidebar(QScrollArea):
             QSpacerItem(0, 0, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding)
         )
 
-        # Version label at bottom
+        # Footer row: version + theme toggle
+        footer_row = QHBoxLayout()
+        footer_row.setContentsMargins(0, 0, 0, 0)
+
         ver = QLabel("v0.1.0")
-        ver.setStyleSheet("font-size: 11px; color: #374151;")
-        root.addWidget(ver)
+        ver.setStyleSheet("font-size: 11px; color: #2a3040;")
+        footer_row.addWidget(ver)
+        footer_row.addStretch()
 
-    # ── Helpers ───────────────────────────────────────────────────────────────
+        self._theme_btn = QPushButton()
+        self._theme_btn.setProperty("secondary", True)
+        self._theme_btn.setFixedSize(28, 28)
+        self._theme_btn.setToolTip("Toggle light / dark theme")
+        self._theme_btn.clicked.connect(self._on_theme_toggle)
+        self.update_theme_button(window.dark_mode if window else True)
+        footer_row.addWidget(self._theme_btn)
 
+        root.addLayout(footer_row)
+
+    def _on_theme_toggle(self) -> None:
+        if self._window:
+            self._window.toggle_theme()
+
+    def update_theme_button(self, dark: bool) -> None:
+        self._theme_btn.setText("☀" if dark else "🌙")
+
+    # ── Browse output folder ───────────────────────────────────────────────────
     def _browse_output(self) -> None:
         start = self.output_input.text() or str(Path.home())
         folder = QFileDialog.getExistingDirectory(self, "Select output root", start)

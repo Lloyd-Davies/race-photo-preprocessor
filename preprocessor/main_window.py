@@ -1,8 +1,9 @@
 """Main application window."""
 from __future__ import annotations
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QSettings
 from PySide6.QtWidgets import (
+    QApplication,
     QHBoxLayout,
     QMainWindow,
     QSplitter,
@@ -19,8 +20,9 @@ from preprocessor.tabs.deploy_tab import DeployTab
 
 
 class MainWindow(QMainWindow):
-    def __init__(self) -> None:
+    def __init__(self, dark_mode: bool = True) -> None:
         super().__init__()
+        self._dark_mode = dark_mode
         self.setWindowTitle("Race Photo Preprocessor")
         self.resize(1280, 800)
         self.setMinimumSize(900, 600)
@@ -38,7 +40,7 @@ class MainWindow(QMainWindow):
         layout.addWidget(splitter)
 
         # Sidebar
-        self.sidebar = Sidebar()
+        self.sidebar = Sidebar(window=self)
         self.sidebar.setProperty("sidebar", True)
         self.sidebar.setMinimumWidth(220)
         self.sidebar.setMaximumWidth(300)
@@ -79,3 +81,15 @@ class MainWindow(QMainWindow):
 
     def get_selected_images(self) -> list[str]:
         return self.import_tab.selected_paths()
+
+    @property
+    def dark_mode(self) -> bool:
+        return self._dark_mode
+
+    def toggle_theme(self) -> None:
+        """Switch between dark and light themes and persist the choice."""
+        from preprocessor.app import get_stylesheet
+        self._dark_mode = not self._dark_mode
+        QApplication.instance().setStyleSheet(get_stylesheet(self._dark_mode))  # type: ignore[union-attr]
+        QSettings("RacePhotoStore", "Preprocessor").setValue("ui/dark_mode", self._dark_mode)
+        self.sidebar.update_theme_button(self._dark_mode)

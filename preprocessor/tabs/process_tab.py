@@ -64,7 +64,7 @@ class ProcessTab(QWidget):
         toolbar.addStretch()
 
         self._info_label = QLabel("Select images in the Import tab, then press Start.")
-        self._info_label.setStyleSheet("color: #6b7280; font-size: 12px;")
+        self._info_label.setStyleSheet("color: #374151; font-size: 12px;")
         toolbar.addWidget(self._info_label)
 
         root.addLayout(toolbar)
@@ -79,9 +79,9 @@ class ProcessTab(QWidget):
         # ── Status line ──────────────────────────────────────────────────────
         status_row = QHBoxLayout()
         self._current_label = QLabel()
-        self._current_label.setStyleSheet("color: #9ca3af; font-size: 12px;")
+        self._current_label.setStyleSheet("color: #6b7280; font-size: 12px;")
         self._eta_label = QLabel()
-        self._eta_label.setStyleSheet("color: #6b7280; font-size: 12px;")
+        self._eta_label.setStyleSheet("color: #374151; font-size: 12px;")
         status_row.addWidget(self._current_label)
         status_row.addStretch()
         status_row.addWidget(self._eta_label)
@@ -107,7 +107,7 @@ class ProcessTab(QWidget):
 
         # ── Summary footer ───────────────────────────────────────────────────
         self._summary = QLabel()
-        self._summary.setStyleSheet("color: #6b7280; font-size: 12px; padding: 2px 0;")
+        self._summary.setStyleSheet("color: #4b5563; font-size: 12px; padding: 2px 0;")
         root.addWidget(self._summary)
 
     # ── Slots ────────────────────────────────────────────────────────────────

@@ -9,6 +9,15 @@ def bib_csv_path(output_root: Path, event_slug: str) -> Path:
     return output_root / "bibs" / event_slug / "bib_tags.csv"
 
 
+def ensure_bib_csv(path: Path) -> None:
+    if path.exists():
+        return
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=["photo_id", "bib", "confidence"])
+        writer.writeheader()
+
+
 def load_bib_rows(path: Path) -> list[dict[str, str]]:
     if not path.exists():
         return []

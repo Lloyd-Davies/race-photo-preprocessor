@@ -90,7 +90,11 @@ def process_photo(source: str, config: ProcessConfig) -> ProcessResult:
     proof_dest = proofs_dir / f"{photo_id}.jpg"
 
     if config.skip_existing and original_dest.exists() and proof_dest.exists():
-        return ProcessResult(source=source, success=True, skipped=True)
+        bib_candidates: list[str] = []
+        if config.auto_bib_scan_enabled:
+            detections = scan_bibs_for_photo(str(proof_dest), config)
+            bib_candidates = [d.bib for d in detections]
+        return ProcessResult(source=source, success=True, skipped=True, bib_candidates=bib_candidates)
 
     try:
         # Original: preserved as pixel-perfect copy

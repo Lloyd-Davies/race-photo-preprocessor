@@ -5,7 +5,9 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 import preprocessor.config as cfg
-from preprocessor.bib_results import bib_csv_path, load_bib_rows, merge_and_save_bibs
+from preprocessor.bib_results import bib_csv_path, ensure_bib_csv, load_bib_rows, merge_and_save_bibs
+from preprocessor.bib_scan import scan_bibs_for_photo
+from preprocessor.pipeline import ProcessConfig
 from preprocessor.store_api import find_event_id_by_slug, upload_bib_tags
 
 from PySide6.QtWidgets import (
@@ -38,10 +40,14 @@ class BibsTab(QWidget):
         self._remove_btn = QPushButton("Remove selected")
         self._remove_btn.setProperty("secondary", True)
         self._remove_btn.clicked.connect(self._remove_selected)
+        self._run_ocr_btn = QPushButton("Run OCR on selected")
+        self._run_ocr_btn.setProperty("secondary", True)
+        self._run_ocr_btn.clicked.connect(self.run_ocr_scan)
         self._upload_btn = QPushButton("Upload bib tags to store")
         self._upload_btn.clicked.connect(self.upload_to_store)
         top.addWidget(self._load_btn)
         top.addWidget(self._remove_btn)
+        top.addWidget(self._run_ocr_btn)
         top.addStretch()
         top.addWidget(self._upload_btn)
         layout.addLayout(top)
@@ -73,7 +79,15 @@ class BibsTab(QWidget):
         path = self._csv_path()
         if path is None:
             return
+        ensure_bib_csv(path)
         merge_and_save_bibs(path, photo_id=photo_id, bibs=bibs, confidence=1.0)
+        self.reload_from_disk()
+
+    def ensure_csv(self) -> None:
+        path = self._csv_path()
+        if path is None:
+            return
+        ensure_bib_csv(path)
         self.reload_from_disk()
 
     def reload_from_disk(self) -> None:
@@ -168,3 +182,43 @@ class BibsTab(QWidget):
             self._status.setText(f"Uploaded bib tags. Added {added} new tags.")
         except Exception as exc:
             self._status.setText(f"Upload failed: {exc}")
+
+    def run_ocr_scan(self) -> None:
+        slug = self._event_slug()
+        output_root = cfg.get_output_root().strip()
+        if not slug or not output_root:
+            self._status.setText("Event slug and output root are required.")
+            return
+
+        selected = self._window.get_selected_images()
+        paths = selected if selected else self._window.import_tab.all_paths()
+        if not paths:
+            self._status.setText("No images available to scan. Use Import tab first.")
+            return
+
+        config = ProcessConfig(
+            event_slug=slug,
+            output_root=Path(output_root),
+            auto_bib_scan_enabled=True,
+            auto_bib_scan_backend=cfg.get_auto_bib_scan_backend(),
+            auto_bib_min_confidence=cfg.get_auto_bib_min_confidence(),
+            auto_bib_min_digits=cfg.get_auto_bib_min_digits(),
+        )
+
+        self.ensure_csv()
+
+        files_with_hits = 0
+        total_hits = 0
+        for src in paths:
+            photo_id = Path(src).stem
+            detections = scan_bibs_for_photo(src, config)
+            bibs = [d.bib for d in detections]
+            if bibs:
+                files_with_hits += 1
+                total_hits += len(bibs)
+                self.add_scanned_bibs(photo_id, bibs)
+
+        self.reload_from_disk()
+        self._status.setText(
+            f"OCR complete: {files_with_hits}/{len(paths)} files with bibs, {total_hits} detections."
+        )

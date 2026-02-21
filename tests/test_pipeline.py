@@ -212,3 +212,30 @@ def test_auto_bib_scan_scaffold_is_noop(photo_folder: Path, tmp_path: Path) -> N
     result = process_photo(str(photo_folder / "DSC_001.jpg"), config)
     assert result.success
     assert result.bib_candidates == []
+
+
+def test_skip_existing_still_scans_when_auto_bib_enabled(monkeypatch, photo_folder: Path, tmp_path: Path) -> None:
+    from preprocessor.bib_scan import BibDetection
+
+    source = str(photo_folder / "DSC_001.jpg")
+    out = tmp_path / "output"
+    config = ProcessConfig(
+        event_slug="ev",
+        output_root=out,
+        skip_existing=True,
+        auto_bib_scan_enabled=True,
+        auto_bib_scan_backend="ocr",
+    )
+
+    first = process_photo(source, config)
+    assert first.success
+
+    monkeypatch.setattr(
+        "preprocessor.pipeline.scan_bibs_for_photo",
+        lambda _path, _cfg: [BibDetection(bib="465", confidence=0.99)],
+    )
+
+    second = process_photo(source, config)
+    assert second.success
+    assert second.skipped
+    assert second.bib_candidates == ["465"]

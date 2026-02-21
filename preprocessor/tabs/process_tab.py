@@ -28,6 +28,7 @@ from PySide6.QtWidgets import (
 
 from preprocessor.pipeline import ProcessConfig, ProcessResult
 from preprocessor.workers.process_worker import ProcessWorker
+from preprocessor.bib_results import ensure_bib_csv
 
 if TYPE_CHECKING:
     from preprocessor.main_window import MainWindow
@@ -292,6 +293,9 @@ class ProcessTab(QWidget):
             auto_bib_min_digits=self._bib_min_digits.value(),
         )
 
+        if self._config.auto_bib_scan_enabled:
+            self._window.bibs_tab.ensure_csv()
+
         self._table.setRowCount(0)
         self._summary.clear()
         self._preview_label.setText("—")
@@ -360,6 +364,10 @@ class ProcessTab(QWidget):
         self._table.setItem(row, 2, msg_item)
         self._table.scrollToBottom()
 
+        if result.success and result.bib_candidates:
+            photo_id = Path(result.source).stem
+            self._window.bibs_tab.add_scanned_bibs(photo_id, result.bib_candidates)
+
         # Update live preview with the proof just generated
         if result.success and not result.skipped and self._config is not None:
             photo_id = Path(result.source).stem
@@ -370,9 +378,6 @@ class ProcessTab(QWidget):
                 / f"{photo_id}.jpg"
             )
             self._load_preview(proof_path)
-
-            if result.bib_candidates:
-                self._window.bibs_tab.add_scanned_bibs(photo_id, result.bib_candidates)
 
     def _load_preview(self, path: Path) -> None:
         if not path.exists():

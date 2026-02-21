@@ -1,6 +1,9 @@
 """Background worker for image processing pipeline."""
 from __future__ import annotations
 
+import os
+from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
+
 from PySide6.QtCore import QThread, Signal
 
 from preprocessor.pipeline import ProcessConfig, ProcessResult, process_photo
@@ -41,19 +44,89 @@ class ProcessWorker(QThread):
         """Request graceful cancellation (checked between files)."""
         self._stop_requested = True
 
+    def _recommended_workers(self, total: int) -> int:
+        if total <= 1:
+            return 1
+        cpu = os.cpu_count() or 4
+        # Keep one core free for UI/system responsiveness.
+        return max(1, min(total, max(2, cpu - 1)))
+
     # ── QThread.run ──────────────────────────────────────────────────────────
 
     def run(self) -> None:
         results: list[ProcessResult] = []
         total = len(self._paths)
 
-        for idx, path in enumerate(self._paths, start=1):
-            if self._stop_requested:
-                break
+        if total == 0:
+            self.finished.emit(results)
+            return
 
-            self.progress.emit(idx, total, path)
-            result = process_photo(path, self._config)
-            results.append(result)
-            self.file_done.emit(result)
+        max_workers = self._recommended_workers(total)
+
+        if max_workers <= 1:
+            for idx, path in enumerate(self._paths, start=1):
+                if self._stop_requested:
+                    break
+
+                self.progress.emit(idx, total, path)
+                result = process_photo(path, self._config)
+                results.append(result)
+                self.file_done.emit(result)
+
+            self.finished.emit(results)
+            return
+
+        executor = ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="process")
+        futures: dict[Future[ProcessResult], tuple[int, str]] = {}
+        submitted = 0
+
+        def submit_next() -> bool:
+            nonlocal submitted
+            if self._stop_requested:
+                return False
+            if submitted >= total:
+                return False
+
+            path = self._paths[submitted]
+            submitted += 1
+            self.progress.emit(submitted, total, path)
+
+            future = executor.submit(process_photo, path, self._config)
+            futures[future] = (submitted, path)
+            return True
+
+        try:
+            for _ in range(min(max_workers, total)):
+                if not submit_next():
+                    break
+
+            while futures:
+                done, _pending = wait(list(futures.keys()), return_when=FIRST_COMPLETED)
+
+                for future in done:
+                    _idx, path = futures.pop(future)
+                    if self._stop_requested:
+                        continue
+
+                    try:
+                        result = future.result()
+                    except Exception as exc:  # defensive: capture worker exceptions
+                        result = ProcessResult(source=path, success=False, error=str(exc))
+
+                    results.append(result)
+                    self.file_done.emit(result)
+
+                    if self._stop_requested:
+                        break
+
+                    submit_next()
+
+                if self._stop_requested:
+                    for pending_future in futures:
+                        pending_future.cancel()
+                    break
+
+        finally:
+            executor.shutdown(wait=False, cancel_futures=True)
 
         self.finished.emit(results)

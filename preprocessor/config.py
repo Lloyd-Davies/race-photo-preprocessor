@@ -103,6 +103,36 @@ def get_watermark_position() -> str:
 def set_watermark_position(v: str) -> None:
     _s().setValue("watermark/position", v)
 
+def get_watermark_pattern() -> str:
+    return str(_s().value("watermark/pattern", "diagonal-repeat"))
+
+def set_watermark_pattern(v: str) -> None:
+    _s().setValue("watermark/pattern", v)
+
+def get_watermark_angle() -> int:
+    return int(_s().value("watermark/angle", -32))  # type: ignore[arg-type]
+
+def set_watermark_angle(v: int) -> None:
+    _s().setValue("watermark/angle", v)
+
+def get_watermark_spacing_x_pct() -> int:
+    return int(_s().value("watermark/spacing_x_pct", 22))  # type: ignore[arg-type]
+
+def set_watermark_spacing_x_pct(v: int) -> None:
+    _s().setValue("watermark/spacing_x_pct", v)
+
+def get_watermark_spacing_y_pct() -> int:
+    return int(_s().value("watermark/spacing_y_pct", 16))  # type: ignore[arg-type]
+
+def set_watermark_spacing_y_pct(v: int) -> None:
+    _s().setValue("watermark/spacing_y_pct", v)
+
+def get_watermark_font_scale_pct() -> int:
+    return int(_s().value("watermark/font_scale_pct", 100))  # type: ignore[arg-type]
+
+def set_watermark_font_scale_pct(v: int) -> None:
+    _s().setValue("watermark/font_scale_pct", v)
+
 
 # ── Processing ────────────────────────────────────────────────────────────────
 

@@ -98,7 +98,7 @@ class Sidebar(QScrollArea):
 
         browse_btn = QPushButton("Browse…")
         browse_btn.setProperty("secondary", True)
-        browse_btn.setFixedWidth(80)
+        browse_btn.setMinimumWidth(96)
         browse_btn.clicked.connect(self._browse_output)
 
         output_row = QHBoxLayout()

@@ -8,11 +8,16 @@ from typing import TYPE_CHECKING
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor, QPixmap
 from PySide6.QtWidgets import (
+    QComboBox,
+    QFormLayout,
+    QGroupBox,
     QHBoxLayout,
     QHeaderView,
     QLabel,
+    QLineEdit,
     QProgressBar,
     QPushButton,
+    QSpinBox,
     QSizePolicy,
     QTableWidget,
     QTableWidgetItem,
@@ -70,6 +75,72 @@ class ProcessTab(QWidget):
         toolbar.addWidget(self._info_label)
 
         root.addLayout(toolbar)
+
+        # ── Watermark settings ───────────────────────────────────────────────
+        import preprocessor.config as cfg
+
+        wm_group = QGroupBox("Watermark")
+        wm_form = QFormLayout(wm_group)
+        wm_form.setContentsMargins(10, 8, 10, 8)
+        wm_form.setSpacing(8)
+
+        self._wm_text = QLineEdit(cfg.get_watermark_text())
+        self._wm_text.setPlaceholderText("© Race Photos")
+        wm_form.addRow("Text", self._wm_text)
+
+        self._wm_opacity = QSpinBox()
+        self._wm_opacity.setRange(0, 100)
+        self._wm_opacity.setValue(cfg.get_watermark_opacity())
+        self._wm_opacity.setSuffix(" %")
+        wm_form.addRow("Opacity", self._wm_opacity)
+
+        self._wm_pattern = QComboBox()
+        self._wm_pattern.addItem("Diagonal repeat", "diagonal-repeat")
+        self._wm_pattern.addItem("Single corner", "single-corner")
+        pattern_value = cfg.get_watermark_pattern()
+        pattern_idx = max(0, self._wm_pattern.findData(pattern_value))
+        self._wm_pattern.setCurrentIndex(pattern_idx)
+        self._wm_pattern.currentIndexChanged.connect(self._on_pattern_changed)
+        wm_form.addRow("Pattern", self._wm_pattern)
+
+        self._wm_position = QComboBox()
+        for pos in (
+            "top-left", "top-center", "top-right",
+            "center-left", "center", "center-right",
+            "bottom-left", "bottom-center", "bottom-right",
+        ):
+            self._wm_position.addItem(pos, pos)
+        pos_value = cfg.get_watermark_position()
+        pos_idx = max(0, self._wm_position.findData(pos_value))
+        self._wm_position.setCurrentIndex(pos_idx)
+        wm_form.addRow("Position", self._wm_position)
+
+        self._wm_angle = QSpinBox()
+        self._wm_angle.setRange(-80, 80)
+        self._wm_angle.setValue(cfg.get_watermark_angle())
+        self._wm_angle.setSuffix("°")
+        wm_form.addRow("Angle", self._wm_angle)
+
+        self._wm_spacing_x = QSpinBox()
+        self._wm_spacing_x.setRange(5, 70)
+        self._wm_spacing_x.setValue(cfg.get_watermark_spacing_x_pct())
+        self._wm_spacing_x.setSuffix(" %")
+        wm_form.addRow("Spacing X", self._wm_spacing_x)
+
+        self._wm_spacing_y = QSpinBox()
+        self._wm_spacing_y.setRange(5, 70)
+        self._wm_spacing_y.setValue(cfg.get_watermark_spacing_y_pct())
+        self._wm_spacing_y.setSuffix(" %")
+        wm_form.addRow("Spacing Y", self._wm_spacing_y)
+
+        self._wm_font_scale = QSpinBox()
+        self._wm_font_scale.setRange(50, 250)
+        self._wm_font_scale.setValue(cfg.get_watermark_font_scale_pct())
+        self._wm_font_scale.setSuffix(" %")
+        wm_form.addRow("Font scale", self._wm_font_scale)
+
+        root.addWidget(wm_group)
+        self._on_pattern_changed()
 
         # ── Progress bar ──────────────────────────────────────────────────────
         self._progress = QProgressBar()
@@ -167,12 +238,19 @@ class ProcessTab(QWidget):
             self._info_label.setText("Output folder is not set — configure it in the sidebar.")
             return
 
+        self._save_watermark_settings()
+
         self._config = ProcessConfig(
             event_slug=slug,
             output_root=Path(output_root),
-            watermark_text=cfg.get_watermark_text(),
-            watermark_opacity=cfg.get_watermark_opacity(),
-            watermark_position=cfg.get_watermark_position(),
+            watermark_text=self._wm_text.text().strip(),
+            watermark_opacity=self._wm_opacity.value(),
+            watermark_pattern=self._wm_pattern.currentData(),
+            watermark_position=self._wm_position.currentData(),
+            watermark_angle=self._wm_angle.value(),
+            watermark_spacing_x_pct=self._wm_spacing_x.value(),
+            watermark_spacing_y_pct=self._wm_spacing_y.value(),
+            watermark_font_scale_pct=self._wm_font_scale.value(),
             proof_size=cfg.get_proof_size(),
             proof_quality=cfg.get_proof_quality(),
             skip_existing=cfg.get_skip_existing(),
@@ -297,3 +375,22 @@ class ProcessTab(QWidget):
         if self._worker:
             self._worker.deleteLater()
             self._worker = None
+
+    def _on_pattern_changed(self) -> None:
+        single = self._wm_pattern.currentData() == "single-corner"
+        self._wm_position.setEnabled(single)
+        self._wm_angle.setEnabled(not single)
+        self._wm_spacing_x.setEnabled(not single)
+        self._wm_spacing_y.setEnabled(not single)
+
+    def _save_watermark_settings(self) -> None:
+        import preprocessor.config as cfg
+
+        cfg.set_watermark_text(self._wm_text.text().strip())
+        cfg.set_watermark_opacity(self._wm_opacity.value())
+        cfg.set_watermark_pattern(str(self._wm_pattern.currentData()))
+        cfg.set_watermark_position(str(self._wm_position.currentData()))
+        cfg.set_watermark_angle(self._wm_angle.value())
+        cfg.set_watermark_spacing_x_pct(self._wm_spacing_x.value())
+        cfg.set_watermark_spacing_y_pct(self._wm_spacing_y.value())
+        cfg.set_watermark_font_scale_pct(self._wm_font_scale.value())

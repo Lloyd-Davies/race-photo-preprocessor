@@ -11,7 +11,12 @@ class ProcessConfig:
     output_root: Path
     watermark_text: str = "© Race Photos"
     watermark_opacity: int = 85          # 0-100
+    watermark_pattern: str = "diagonal-repeat"
     watermark_position: str = "bottom-right"
+    watermark_angle: int = -32
+    watermark_spacing_x_pct: int = 22
+    watermark_spacing_y_pct: int = 16
+    watermark_font_scale_pct: int = 100
     proof_size: int = 1600               # longest edge px
     proof_quality: int = 82              # JPEG quality
     skip_existing: bool = True

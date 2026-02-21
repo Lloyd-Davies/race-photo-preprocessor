@@ -84,9 +84,9 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.RELEASE_TAG }}
-          name: Race Photo Preprocessor ${{ env.RELEASE_TAG }}
+          name: Race Photo Pre-Processor ${{ env.RELEASE_TAG }}
           body: |
-            ## Race Photo Preprocessor ${{ env.RELEASE_TAG }}
+            ## Race Photo Pre-Processor ${{ env.RELEASE_TAG }}
 
             Desktop tool for preparing race photos before upload.
 

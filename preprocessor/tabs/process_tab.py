@@ -26,6 +26,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+import preprocessor.config as cfg
 from preprocessor.pipeline import ProcessConfig, ProcessResult
 from preprocessor.workers.process_worker import ProcessWorker
 from preprocessor.bib_results import ensure_bib_csv
@@ -38,8 +39,6 @@ _STATUS_ICONS = {
     "skipped": ("⚡", "#f59e0b"),
     "error":   ("✗", "#ef4444"),
 }
-
-_PLACEHOLDER_STYLE = "color: #4b5563; font-size: 12px;"
 
 
 class ProcessTab(QWidget):
@@ -79,12 +78,14 @@ class ProcessTab(QWidget):
         root.addLayout(toolbar)
 
         # ── Watermark settings ───────────────────────────────────────────────
-        import preprocessor.config as cfg
-
         wm_group = QGroupBox("Watermark")
+        wm_group.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         wm_form = QFormLayout(wm_group)
         wm_form.setContentsMargins(10, 8, 10, 8)
         wm_form.setSpacing(8)
+        wm_form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
+        wm_form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapLongRows)
+        wm_form.setLabelAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
 
         self._wm_text = QLineEdit(cfg.get_watermark_text())
         self._wm_text.setPlaceholderText("© Race Photos")
@@ -144,19 +145,23 @@ class ProcessTab(QWidget):
         root.addWidget(wm_group)
         self._on_pattern_changed()
 
-        # ── Auto bib scan (scaffold) ───────────────────────────────────────
-        bib_group = QGroupBox("Auto bib scan (experimental)")
+        # ── Auto bib scan ─────────────────────────────────────────────────
+        bib_group = QGroupBox("Auto bib scan")
+        bib_group.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         bib_form = QFormLayout(bib_group)
         bib_form.setContentsMargins(10, 8, 10, 8)
         bib_form.setSpacing(8)
+        bib_form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
+        bib_form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapLongRows)
+        bib_form.setLabelAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
 
         self._bib_enabled = QCheckBox("Enable auto bib scanning")
         self._bib_enabled.setChecked(cfg.get_auto_bib_scan_enabled())
         bib_form.addRow(self._bib_enabled)
 
         self._bib_backend = QComboBox()
-        self._bib_backend.addItem("None (scaffold)", "none")
-        self._bib_backend.addItem("OCR (rapidocr)", "ocr")
+        self._bib_backend.addItem("Disabled", "none")
+        self._bib_backend.addItem("OCR (RapidOCR)", "ocr")
         backend_value = cfg.get_auto_bib_scan_backend()
         backend_idx = max(0, self._bib_backend.findData(backend_value))
         self._bib_backend.setCurrentIndex(backend_idx)
@@ -168,10 +173,16 @@ class ProcessTab(QWidget):
         self._bib_min_conf.setSuffix(" %")
         bib_form.addRow("Min confidence", self._bib_min_conf)
 
+        self._bib_enforce_min_digits = QCheckBox("Enforce minimum bib length")
+        self._bib_enforce_min_digits.setChecked(cfg.get_auto_bib_enforce_min_digits())
+        self._bib_enforce_min_digits.toggled.connect(self._on_bib_digits_toggle)
+        bib_form.addRow(self._bib_enforce_min_digits)
+
         self._bib_min_digits = QSpinBox()
         self._bib_min_digits.setRange(1, 6)
         self._bib_min_digits.setValue(cfg.get_auto_bib_min_digits())
         bib_form.addRow("Min digits", self._bib_min_digits)
+        self._on_bib_digits_toggle(self._bib_enforce_min_digits.isChecked())
 
         root.addWidget(bib_group)
 
@@ -265,7 +276,6 @@ class ProcessTab(QWidget):
             self._info_label.setText("Event slug is empty — set it in the sidebar.")
             return
 
-        import preprocessor.config as cfg
         output_root = cfg.get_output_root()
         if not output_root:
             self._info_label.setText("Output folder is not set — configure it in the sidebar.")
@@ -290,6 +300,7 @@ class ProcessTab(QWidget):
             auto_bib_scan_enabled=self._bib_enabled.isChecked(),
             auto_bib_scan_backend=str(self._bib_backend.currentData()),
             auto_bib_min_confidence=self._bib_min_conf.value(),
+            auto_bib_enforce_min_digits=self._bib_enforce_min_digits.isChecked(),
             auto_bib_min_digits=self._bib_min_digits.value(),
         )
 
@@ -428,8 +439,6 @@ class ProcessTab(QWidget):
         self._wm_spacing_y.setEnabled(not single)
 
     def _save_watermark_settings(self) -> None:
-        import preprocessor.config as cfg
-
         cfg.set_watermark_text(self._wm_text.text().strip())
         cfg.set_watermark_opacity(self._wm_opacity.value())
         cfg.set_watermark_pattern(str(self._wm_pattern.currentData()))
@@ -441,4 +450,8 @@ class ProcessTab(QWidget):
         cfg.set_auto_bib_scan_enabled(self._bib_enabled.isChecked())
         cfg.set_auto_bib_scan_backend(str(self._bib_backend.currentData()))
         cfg.set_auto_bib_min_confidence(self._bib_min_conf.value())
+        cfg.set_auto_bib_enforce_min_digits(self._bib_enforce_min_digits.isChecked())
         cfg.set_auto_bib_min_digits(self._bib_min_digits.value())
+
+    def _on_bib_digits_toggle(self, checked: bool) -> None:
+        self._bib_min_digits.setEnabled(checked)

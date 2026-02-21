@@ -37,8 +37,17 @@ def set_output_root(v: str) -> None:
 
 # ── Store API ─────────────────────────────────────────────────────────────────
 
+_STORE_URL_DEFAULT = ""
+# Stale localhost defaults from older installs — clear them so the user
+# is prompted to enter the real store URL.
+_STORE_URL_LEGACY = {"http://localhost:8081", "http://localhost:8080"}
+
 def get_store_url() -> str:
-    return str(_s().value("store/url", "http://localhost:8081"))
+    saved = str(_s().value("store/url", _STORE_URL_DEFAULT))
+    if saved in _STORE_URL_LEGACY:
+        set_store_url(_STORE_URL_DEFAULT)
+        return _STORE_URL_DEFAULT
+    return saved
 
 def set_store_url(v: str) -> None:
     _s().setValue("store/url", v)
@@ -171,6 +180,12 @@ def get_auto_bib_min_confidence() -> int:
 
 def set_auto_bib_min_confidence(v: int) -> None:
     _s().setValue("process/auto_bib_min_confidence", v)
+
+def get_auto_bib_enforce_min_digits() -> bool:
+    return _s().value("process/auto_bib_enforce_min_digits", False, type=bool)  # type: ignore[call-overload]
+
+def set_auto_bib_enforce_min_digits(v: bool) -> None:
+    _s().setValue("process/auto_bib_enforce_min_digits", v)
 
 def get_auto_bib_min_digits() -> int:
     return int(_s().value("process/auto_bib_min_digits", 3))  # type: ignore[arg-type]

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from PySide6.QtCore import QThread, Signal
 from PySide6.QtWidgets import (
     QFileDialog,
     QFormLayout,
@@ -17,6 +18,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 from typing import TYPE_CHECKING
+
+from preprocessor import store_api
 
 import preprocessor.config as cfg
 
@@ -126,7 +129,7 @@ class Sidebar(QScrollArea):
         form_api.setContentsMargins(0, 0, 0, 0)
 
         self.store_url_input = QLineEdit(cfg.get_store_url())
-        self.store_url_input.setPlaceholderText("http://localhost:8081")
+        self.store_url_input.setPlaceholderText("https://your-store-url")
         self.store_url_input.editingFinished.connect(
             lambda: cfg.set_store_url(self.store_url_input.text().strip())
         )
@@ -142,6 +145,21 @@ class Sidebar(QScrollArea):
 
         root.addLayout(form_api)
 
+        # Test connection row
+        test_row = QHBoxLayout()
+        test_row.setContentsMargins(0, 0, 0, 0)
+        self._conn_test_btn = QPushButton("Test")
+        self._conn_test_btn.setProperty("secondary", True)
+        self._conn_test_btn.setFixedWidth(60)
+        self._conn_test_btn.setToolTip("Test connection to the store API")
+        self._conn_test_btn.clicked.connect(self._on_test_connection)
+        self._conn_status_label = QLabel("")
+        self._conn_status_label.setProperty("hint", True)
+        self._conn_status_label.setWordWrap(True)
+        test_row.addWidget(self._conn_test_btn)
+        test_row.addWidget(self._conn_status_label, 1)
+        root.addLayout(test_row)
+
         # ── Spacer ────────────────────────────────────────────────────────────
         root.addSpacerItem(
             QSpacerItem(0, 0, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding)
@@ -151,7 +169,7 @@ class Sidebar(QScrollArea):
         footer_row = QHBoxLayout()
         footer_row.setContentsMargins(0, 0, 0, 0)
 
-        ver = QLabel("v0.1.0")
+        ver = QLabel("v0.2.0")
         ver.setProperty("hint", True)
         footer_row.addWidget(ver)
         footer_row.addStretch()
@@ -165,6 +183,37 @@ class Sidebar(QScrollArea):
         footer_row.addWidget(self._theme_btn)
 
         root.addLayout(footer_row)
+
+    # ── Connection test ───────────────────────────────────────────────────────
+
+    def _on_test_connection(self) -> None:
+        url = self.store_url_input.text().strip() or cfg.get_store_url()
+        token = self.store_token_input.text().strip() or cfg.get_store_token()
+        self._conn_test_btn.setEnabled(False)
+        self._conn_status_label.setText("Connecting…")
+        self._conn_status_label.setStyleSheet("")
+
+        class _Worker(QThread):
+            done = Signal(bool, str)
+
+            def __init__(self, url, token):
+                super().__init__()
+                self._url = url
+                self._token = token
+
+            def run(self):
+                result = store_api.test_connection(self._url, self._token)
+                self.done.emit(result.ok, result.message)
+
+        self._test_worker = _Worker(url, token)
+        self._test_worker.done.connect(self._on_test_done)
+        self._test_worker.start()
+
+    def _on_test_done(self, ok: bool, message: str) -> None:
+        self._conn_test_btn.setEnabled(True)
+        self._conn_status_label.setText(message)
+        colour = "#4caf50" if ok else "#f44336"
+        self._conn_status_label.setStyleSheet(f"color: {colour};")
 
     def _on_theme_toggle(self) -> None:
         if self._window:

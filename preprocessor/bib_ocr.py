@@ -1,7 +1,6 @@
-"""OCR adapter scaffolding for bib scanning.
+"""OCR adapter for bib scanning.
 
-This module defines a backend-neutral interface that future OCR integrations can
-implement without changing the pipeline contract.
+Backend-neutral interface — currently supports `none` (no-op) and `ocr` (RapidOCR).
 """
 from __future__ import annotations
 
@@ -20,17 +19,13 @@ class OCRTextCandidate:
 def extract_text_candidates(photo_path: str, backend: str = "none") -> list[OCRTextCandidate]:
     """Extract OCR text candidates from an image.
 
-    Current behavior:
-    - `none`: returns an empty list.
-    - `ocr`: uses `rapidocr-onnxruntime` when available.
-    - any other backend: returns empty list for safety.
+    - ``none``: returns an empty list (no-op).
+    - ``ocr``: uses ``rapidocr-onnxruntime`` when available.
+    - any other value: safe no-op.
     """
     global _RAPID_OCR_ENGINE
 
-    if backend == "none":
-        return []
-
-    if backend != "ocr":
+    if backend not in ("ocr",):
         return []
 
     try:
@@ -54,13 +49,13 @@ def extract_text_candidates(photo_path: str, backend: str = "none") -> list[OCRT
         text = str(item[1])
         confidence = float(item[2])
 
-        bbox = None
+        bbox: tuple[int, int, int, int] | None = None
         try:
             xs = [int(p[0]) for p in poly]
             ys = [int(p[1]) for p in poly]
             bbox = (min(xs), min(ys), max(xs), max(ys))
         except Exception:
-            bbox = None
+            pass
 
         out.append(OCRTextCandidate(text=text, confidence=confidence, bbox=bbox))
 

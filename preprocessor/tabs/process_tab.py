@@ -371,6 +371,9 @@ class ProcessTab(QWidget):
             )
             self._load_preview(proof_path)
 
+            if result.bib_candidates:
+                self._window.bibs_tab.add_scanned_bibs(photo_id, result.bib_candidates)
+
     def _load_preview(self, path: Path) -> None:
         if not path.exists():
             return

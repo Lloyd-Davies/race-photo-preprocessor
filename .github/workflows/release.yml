@@ -1,0 +1,106 @@
+name: Build and publish release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag (e.g. v0.1.0)"
+        required: true
+        type: string
+
+jobs:
+  release-windows:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Resolve release tag
+        shell: pwsh
+        run: |
+          if ('${{ github.event_name }}' -eq 'workflow_dispatch') {
+            "RELEASE_TAG=${{ inputs.tag }}" >> $env:GITHUB_ENV
+          } else {
+            "RELEASE_TAG=${{ github.ref_name }}" >> $env:GITHUB_ENV
+          }
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          pip install .
+          pip install pyinstaller pillow
+
+      - name: Generate executable icon
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path build_assets | Out-Null
+          $iconScript = @(
+            'from PIL import Image, ImageDraw',
+            '',
+            'size = 256',
+            'img = Image.new("RGBA", (size, size), (0, 0, 0, 0))',
+            'draw = ImageDraw.Draw(img)',
+            '',
+            '# Camera body',
+            'draw.rounded_rectangle((32, 68, 224, 206), radius=26, fill=(14, 165, 233, 255), outline=(2, 132, 199, 255), width=8)',
+            '# Top bump',
+            'draw.rounded_rectangle((78, 38, 132, 78), radius=8, fill=(14, 165, 233, 255), outline=(2, 132, 199, 255), width=6)',
+            '# Lens',
+            'draw.ellipse((86, 92, 170, 176), fill=(224, 242, 254, 255), outline=(2, 132, 199, 255), width=8)',
+            'draw.ellipse((104, 110, 152, 158), fill=(3, 105, 161, 255))',
+            '# Flash dot',
+            'draw.ellipse((178, 96, 194, 112), fill=(240, 249, 255, 255))',
+            '',
+            'img.save("build_assets/app.ico", format="ICO", sizes=[(16,16), (24,24), (32,32), (48,48), (64,64), (128,128), (256,256)])'
+          )
+          Set-Content -Path build_assets\make_icon.py -Value $iconScript
+          python build_assets\make_icon.py
+
+      - name: Build executable
+        shell: pwsh
+        run: |
+          pyinstaller --noconfirm --clean --onefile --windowed --name preprocessor --icon build_assets/app.ico preprocessor/app.py
+
+      - name: Prepare release assets
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path release | Out-Null
+          Copy-Item dist\preprocessor.exe release\race-photo-preprocessor-windows.exe
+          Compress-Archive -Path release\race-photo-preprocessor-windows.exe -DestinationPath release\race-photo-preprocessor-windows.zip -Force
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.RELEASE_TAG }}
+          name: Race Photo Preprocessor ${{ env.RELEASE_TAG }}
+          body: |
+            ## Race Photo Preprocessor ${{ env.RELEASE_TAG }}
+
+            Desktop tool for preparing race photos before upload.
+
+            ### Download
+            - `race-photo-preprocessor-windows.exe` — standalone Windows app
+            - `race-photo-preprocessor-windows.zip` — zipped executable
+
+            ### Highlights
+            - Configurable watermark controls in Process tab
+            - Diagonal repeat and single-corner watermark modes
+            - Minimal camera-themed app icon
+          files: |
+            release/race-photo-preprocessor-windows.exe
+            release/race-photo-preprocessor-windows.zip
+          draft: false
+          prerelease: false
+          fail_on_unmatched_files: true

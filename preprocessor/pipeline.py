@@ -35,6 +35,7 @@ class ProcessConfig:
 class ProcessResult:
     source: str
     success: bool
+    photo_id: str = ""           # assigned output name stem (e.g. bmc-2025-0001)
     skipped: bool = False
     error: str | None = None
     bib_candidates: list[str] = field(default_factory=list)
@@ -68,9 +69,13 @@ def _extract_time_exif_bytes(source_img) -> bytes | None:
     return keep.tobytes() if len(keep) > 0 else None
 
 
-def process_photo(source: str, config: ProcessConfig) -> ProcessResult:
+def process_photo(source: str, config: ProcessConfig, photo_id: str | None = None) -> ProcessResult:
     """
     Process a single photo: copy as original, generate resized/watermarked proof.
+
+    photo_id overrides the output filename stem.  If omitted the source
+    filename stem is used (legacy behaviour).  The assigned photo_id is
+    always recorded in the returned ProcessResult.
 
     Original: pixel-perfect copy, EXIF preserved.
     Proof: resized to longest edge ≤ proof_size, watermark applied, capture-time EXIF preserved.
@@ -79,23 +84,23 @@ def process_photo(source: str, config: ProcessConfig) -> ProcessResult:
 
     source_path = Path(source)
     if not source_path.exists():
-        return ProcessResult(source=source, success=False, error="File not found")
+        return ProcessResult(source=source, success=False, photo_id=photo_id or source_path.stem, error="File not found")
 
-    photo_id = source_path.stem
+    assigned_id = photo_id if photo_id else source_path.stem
     proofs_dir = config.output_root / "proofs" / config.event_slug
     originals_dir = config.output_root / "originals" / config.event_slug
     proofs_dir.mkdir(parents=True, exist_ok=True)
     originals_dir.mkdir(parents=True, exist_ok=True)
 
-    original_dest = originals_dir / f"{photo_id}.jpg"
-    proof_dest = proofs_dir / f"{photo_id}.jpg"
+    original_dest = originals_dir / f"{assigned_id}.jpg"
+    proof_dest = proofs_dir / f"{assigned_id}.jpg"
 
     if config.skip_existing and original_dest.exists() and proof_dest.exists():
         bib_candidates: list[str] = []
         if config.auto_bib_scan_enabled:
             detections = scan_bibs_for_photo(str(proof_dest), config)
             bib_candidates = [d.bib for d in detections]
-        return ProcessResult(source=source, success=True, skipped=True, bib_candidates=bib_candidates)
+        return ProcessResult(source=source, success=True, photo_id=assigned_id, skipped=True, bib_candidates=bib_candidates)
 
     try:
         # Original: preserved as pixel-perfect copy
@@ -133,6 +138,6 @@ def process_photo(source: str, config: ProcessConfig) -> ProcessResult:
             bib_candidates = [d.bib for d in detections]
 
     except Exception as exc:
-        return ProcessResult(source=source, success=False, error=str(exc))
+        return ProcessResult(source=source, success=False, photo_id=assigned_id, error=str(exc))
 
-    return ProcessResult(source=source, success=True, bib_candidates=bib_candidates)
+    return ProcessResult(source=source, success=True, photo_id=assigned_id, bib_candidates=bib_candidates)

@@ -169,3 +169,46 @@ def test_watermark_pattern_affects_multiple_regions(large_jpeg: Path, tmp_path: 
     assert tl > 0, "Top-left should show watermark pattern"
     assert center > 0, "Center should show watermark pattern"
     assert br > 0, "Bottom-right should show watermark pattern"
+
+
+def test_proof_preserves_capture_datetime_exif(tmp_path: Path) -> None:
+    """Proof output must retain capture datetime EXIF tags for downstream time filters."""
+    from PIL import Image
+
+    source = tmp_path / "source.jpg"
+    output = tmp_path / "output"
+
+    exif = Image.Exif()
+    exif[0x9003] = "2026:02:21 09:12:34"  # DateTimeOriginal
+    exif[0x9004] = "2026:02:21 09:12:34"  # DateTimeDigitized
+    exif[0x0132] = "2026:02:21 09:12:34"  # DateTime
+
+    img = Image.new("RGB", (2200, 1460), (140, 130, 120))
+    img.save(source, format="JPEG", exif=exif.tobytes())
+
+    config = ProcessConfig(event_slug="ev", output_root=output, proof_size=1600)
+    result = process_photo(str(source), config)
+    assert result.success
+
+    proof = output / "proofs" / "ev" / "source.jpg"
+    proof_exif = Image.open(proof).getexif()
+
+    assert proof_exif.get(0x9003) == "2026:02:21 09:12:34"
+    assert proof_exif.get(0x9004) == "2026:02:21 09:12:34"
+    assert proof_exif.get(0x0132) == "2026:02:21 09:12:34"
+
+
+def test_auto_bib_scan_scaffold_is_noop(photo_folder: Path, tmp_path: Path) -> None:
+    """Enabling auto bib scan scaffold should not fail and returns no detections yet."""
+    output = tmp_path / "output"
+    config = ProcessConfig(
+        event_slug="test-event",
+        output_root=output,
+        auto_bib_scan_enabled=True,
+        auto_bib_scan_backend="ocr",
+        auto_bib_min_confidence=75,
+    )
+
+    result = process_photo(str(photo_folder / "DSC_001.jpg"), config)
+    assert result.success
+    assert result.bib_candidates == []

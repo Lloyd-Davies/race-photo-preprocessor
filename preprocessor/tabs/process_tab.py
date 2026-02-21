@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor, QPixmap
 from PySide6.QtWidgets import (
+    QCheckBox,
     QComboBox,
     QFormLayout,
     QGroupBox,
@@ -142,6 +143,32 @@ class ProcessTab(QWidget):
         root.addWidget(wm_group)
         self._on_pattern_changed()
 
+        # ── Auto bib scan (scaffold) ───────────────────────────────────────
+        bib_group = QGroupBox("Auto bib scan (experimental)")
+        bib_form = QFormLayout(bib_group)
+        bib_form.setContentsMargins(10, 8, 10, 8)
+        bib_form.setSpacing(8)
+
+        self._bib_enabled = QCheckBox("Enable auto bib scanning")
+        self._bib_enabled.setChecked(cfg.get_auto_bib_scan_enabled())
+        bib_form.addRow(self._bib_enabled)
+
+        self._bib_backend = QComboBox()
+        self._bib_backend.addItem("None (scaffold)", "none")
+        self._bib_backend.addItem("OCR (planned)", "ocr")
+        backend_value = cfg.get_auto_bib_scan_backend()
+        backend_idx = max(0, self._bib_backend.findData(backend_value))
+        self._bib_backend.setCurrentIndex(backend_idx)
+        bib_form.addRow("Backend", self._bib_backend)
+
+        self._bib_min_conf = QSpinBox()
+        self._bib_min_conf.setRange(1, 100)
+        self._bib_min_conf.setValue(cfg.get_auto_bib_min_confidence())
+        self._bib_min_conf.setSuffix(" %")
+        bib_form.addRow("Min confidence", self._bib_min_conf)
+
+        root.addWidget(bib_group)
+
         # ── Progress bar ──────────────────────────────────────────────────────
         self._progress = QProgressBar()
         self._progress.setFixedHeight(8)
@@ -254,6 +281,9 @@ class ProcessTab(QWidget):
             proof_size=cfg.get_proof_size(),
             proof_quality=cfg.get_proof_quality(),
             skip_existing=cfg.get_skip_existing(),
+            auto_bib_scan_enabled=self._bib_enabled.isChecked(),
+            auto_bib_scan_backend=str(self._bib_backend.currentData()),
+            auto_bib_min_confidence=self._bib_min_conf.value(),
         )
 
         self._table.setRowCount(0)
@@ -394,3 +424,6 @@ class ProcessTab(QWidget):
         cfg.set_watermark_spacing_x_pct(self._wm_spacing_x.value())
         cfg.set_watermark_spacing_y_pct(self._wm_spacing_y.value())
         cfg.set_watermark_font_scale_pct(self._wm_font_scale.value())
+        cfg.set_auto_bib_scan_enabled(self._bib_enabled.isChecked())
+        cfg.set_auto_bib_scan_backend(str(self._bib_backend.currentData()))
+        cfg.set_auto_bib_min_confidence(self._bib_min_conf.value())

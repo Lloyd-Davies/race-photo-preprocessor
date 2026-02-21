@@ -154,6 +154,24 @@ def get_skip_existing() -> bool:
 def set_skip_existing(v: bool) -> None:
     _s().setValue("process/skip_existing", v)
 
+def get_auto_bib_scan_enabled() -> bool:
+    return _s().value("process/auto_bib_scan_enabled", False, type=bool)  # type: ignore[call-overload]
+
+def set_auto_bib_scan_enabled(v: bool) -> None:
+    _s().setValue("process/auto_bib_scan_enabled", v)
+
+def get_auto_bib_scan_backend() -> str:
+    return str(_s().value("process/auto_bib_scan_backend", "none"))
+
+def set_auto_bib_scan_backend(v: str) -> None:
+    _s().setValue("process/auto_bib_scan_backend", v)
+
+def get_auto_bib_min_confidence() -> int:
+    return int(_s().value("process/auto_bib_min_confidence", 70))  # type: ignore[arg-type]
+
+def set_auto_bib_min_confidence(v: int) -> None:
+    _s().setValue("process/auto_bib_min_confidence", v)
+
 
 # ── Last used import folder ───────────────────────────────────────────────────
 

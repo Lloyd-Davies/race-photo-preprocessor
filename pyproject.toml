@@ -24,6 +24,9 @@ dev = [
     "pytest-cov>=5.0",
     "numpy>=1.26",
 ]
+ocr = [
+    "rapidocr-onnxruntime>=1.4.4",
+]
 
 [tool.hatch.build.targets.wheel]
 packages = ["preprocessor"]

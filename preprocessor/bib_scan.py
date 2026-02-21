@@ -25,9 +25,10 @@ def _normalize_bib(value: str) -> str:
     return "".join(ch for ch in value if ch.isdigit())
 
 
-def _is_valid_bib(value: str) -> bool:
-    # Keep simple and conservative for now: 1-5 digit numeric bibs.
-    return 1 <= len(value) <= 5 and value.isdigit()
+def _is_valid_bib(value: str, min_digits: int) -> bool:
+    # Keep simple and conservative for now: configurable min digits up to 5.
+    lower = max(1, min(5, int(min_digits)))
+    return lower <= len(value) <= 5 and value.isdigit()
 
 
 def scan_bibs_for_photo(photo_path: str, config: "ProcessConfig") -> list[BibDetection]:
@@ -40,6 +41,7 @@ def scan_bibs_for_photo(photo_path: str, config: "ProcessConfig") -> list[BibDet
         return []
 
     min_conf = max(1, min(100, int(config.auto_bib_min_confidence))) / 100.0
+    min_digits = max(1, min(5, int(config.auto_bib_min_digits)))
 
     detections: list[BibDetection] = []
     seen: set[str] = set()
@@ -50,7 +52,7 @@ def scan_bibs_for_photo(photo_path: str, config: "ProcessConfig") -> list[BibDet
             continue
 
         bib = _normalize_bib(candidate.text)
-        if not _is_valid_bib(bib):
+        if not _is_valid_bib(bib, min_digits=min_digits):
             continue
         if bib in seen:
             continue

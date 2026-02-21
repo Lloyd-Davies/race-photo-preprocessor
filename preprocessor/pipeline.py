@@ -27,6 +27,7 @@ class ProcessConfig:
     auto_bib_scan_enabled: bool = False
     auto_bib_scan_backend: str = "none"
     auto_bib_min_confidence: int = 70
+    auto_bib_min_digits: int = 3
 
 
 @dataclass

@@ -172,6 +172,12 @@ def get_auto_bib_min_confidence() -> int:
 def set_auto_bib_min_confidence(v: int) -> None:
     _s().setValue("process/auto_bib_min_confidence", v)
 
+def get_auto_bib_min_digits() -> int:
+    return int(_s().value("process/auto_bib_min_digits", 3))  # type: ignore[arg-type]
+
+def set_auto_bib_min_digits(v: int) -> None:
+    _s().setValue("process/auto_bib_min_digits", v)
+
 
 # ── Last used import folder ───────────────────────────────────────────────────
 

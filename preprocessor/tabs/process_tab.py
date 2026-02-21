@@ -155,7 +155,7 @@ class ProcessTab(QWidget):
 
         self._bib_backend = QComboBox()
         self._bib_backend.addItem("None (scaffold)", "none")
-        self._bib_backend.addItem("OCR (planned)", "ocr")
+        self._bib_backend.addItem("OCR (rapidocr)", "ocr")
         backend_value = cfg.get_auto_bib_scan_backend()
         backend_idx = max(0, self._bib_backend.findData(backend_value))
         self._bib_backend.setCurrentIndex(backend_idx)
@@ -166,6 +166,11 @@ class ProcessTab(QWidget):
         self._bib_min_conf.setValue(cfg.get_auto_bib_min_confidence())
         self._bib_min_conf.setSuffix(" %")
         bib_form.addRow("Min confidence", self._bib_min_conf)
+
+        self._bib_min_digits = QSpinBox()
+        self._bib_min_digits.setRange(1, 6)
+        self._bib_min_digits.setValue(cfg.get_auto_bib_min_digits())
+        bib_form.addRow("Min digits", self._bib_min_digits)
 
         root.addWidget(bib_group)
 
@@ -284,6 +289,7 @@ class ProcessTab(QWidget):
             auto_bib_scan_enabled=self._bib_enabled.isChecked(),
             auto_bib_scan_backend=str(self._bib_backend.currentData()),
             auto_bib_min_confidence=self._bib_min_conf.value(),
+            auto_bib_min_digits=self._bib_min_digits.value(),
         )
 
         self._table.setRowCount(0)
@@ -427,3 +433,4 @@ class ProcessTab(QWidget):
         cfg.set_auto_bib_scan_enabled(self._bib_enabled.isChecked())
         cfg.set_auto_bib_scan_backend(str(self._bib_backend.currentData()))
         cfg.set_auto_bib_min_confidence(self._bib_min_conf.value())
+        cfg.set_auto_bib_min_digits(self._bib_min_digits.value())

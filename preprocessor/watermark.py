@@ -8,31 +8,16 @@ from PIL import Image, ImageDraw, ImageFont
 if TYPE_CHECKING:
     from preprocessor.pipeline import ProcessConfig
 
-# position key → (x_fraction, y_fraction)
-# x_fraction: 0=left edge, 0.5=centre, 1=right edge
-# y_fraction: 0=top edge, 0.5=centre, 1=bottom edge
-_POSITIONS: dict[str, tuple[float, float]] = {
-    "top-left":      (0.0, 0.0),
-    "top-center":    (0.5, 0.0),
-    "top-right":     (1.0, 0.0),
-    "center-left":   (0.0, 0.5),
-    "center":        (0.5, 0.5),
-    "center-right":  (1.0, 0.5),
-    "bottom-left":   (0.0, 1.0),
-    "bottom-center": (0.5, 1.0),
-    "bottom-right":  (1.0, 1.0),
-}
-
 
 def apply_watermark(img: Image.Image, config: "ProcessConfig") -> Image.Image:
-    """Draw a text watermark on *img* and return the composited RGB image."""
+    """Draw a subtle diagonal repeating text pattern and return RGB image."""
     text = config.watermark_text
     if not text:
         return img
 
     w, h = img.size
-    margin = int(min(w, h) * 0.03)
-    font_size = max(14, int(min(w, h) * 0.032))
+    shortest = min(w, h)
+    font_size = max(14, int(shortest * 0.028))
 
     font: ImageFont.ImageFont | ImageFont.FreeTypeFont
     for face in ("arial.ttf", "Arial.ttf", "DejaVuSans.ttf", "FreeSans.ttf"):
@@ -44,44 +29,40 @@ def apply_watermark(img: Image.Image, config: "ProcessConfig") -> Image.Image:
     else:
         font = ImageFont.load_default()
 
-    # Measure text on a throw-away draw surface
+    # Measure text
     _tmp = ImageDraw.Draw(Image.new("RGBA", (1, 1)))
     bbox = _tmp.textbbox((0, 0), text, font=font)
     tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
 
-    fx, fy = _POSITIONS.get(config.watermark_position, _POSITIONS["bottom-right"])
+    # Keep this subtle even at high opacity settings.
+    base_alpha = max(0, min(255, int(config.watermark_opacity / 100 * 255)))
+    alpha = max(12, min(120, int(base_alpha * 0.45)))
 
-    # Anchor: edge positions use margin, centre positions are truly centred
-    if fx == 0.0:
-        x = margin
-    elif fx == 1.0:
-        x = w - margin - tw
-    else:
-        x = (w - tw) // 2
+    spacing_x = max(int(tw * 2.1), int(shortest * 0.22))
+    spacing_y = max(int(th * 2.8), int(shortest * 0.16))
 
-    if fy == 0.0:
-        y = margin
-    elif fy == 1.0:
-        y = h - margin - th
-    else:
-        y = (h - th) // 2
+    # Draw on a large square so post-rotation fully covers the image.
+    diag = int((w * w + h * h) ** 0.5) + max(spacing_x, spacing_y) * 2
+    pattern = Image.new("RGBA", (diag, diag), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(pattern)
 
-    alpha = max(0, min(255, int(config.watermark_opacity / 100 * 255)))
-    shadow_off = max(1, font_size // 20)
+    y = -spacing_y
+    row = 0
+    while y < diag + spacing_y:
+        x_offset = (spacing_x // 2) if (row % 2) else 0
+        x = -spacing_x + x_offset
+        while x < diag + spacing_x:
+            draw.text((x, y), text, font=font, fill=(255, 255, 255, alpha))
+            x += spacing_x
+        y += spacing_y
+        row += 1
+
+    rotated = pattern.rotate(-32, resample=Image.Resampling.BICUBIC)
+
+    left = (diag - w) // 2
+    top = (diag - h) // 2
+    overlay = rotated.crop((left, top, left + w, top + h))
 
     base = img.convert("RGBA")
-    overlay = Image.new("RGBA", base.size, (0, 0, 0, 0))
-    draw = ImageDraw.Draw(overlay)
-
-    # Drop shadow
-    draw.text(
-        (x + shadow_off, y + shadow_off),
-        text,
-        font=font,
-        fill=(0, 0, 0, min(alpha, 200)),
-    )
-    # Main text
-    draw.text((x, y), text, font=font, fill=(255, 255, 255, alpha))
-
     merged = Image.alpha_composite(base, overlay)
     return merged.convert("RGB")

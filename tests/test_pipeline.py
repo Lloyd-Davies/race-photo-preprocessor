@@ -135,8 +135,8 @@ def test_watermark_changes_pixels(large_jpeg: Path, tmp_path: Path) -> None:
     assert not (arr_wm == arr_no).all(), "Watermarked proof must differ from unwatermarked"
 
 
-def test_watermark_position_bottom_right(large_jpeg: Path, tmp_path: Path) -> None:
-    """Bottom-right region should be brighter (white text) in watermarked proof."""
+def test_watermark_pattern_affects_multiple_regions(large_jpeg: Path, tmp_path: Path) -> None:
+    """Diagonal repeating watermark should affect multiple image regions."""
     from PIL import Image
     import numpy as np
 
@@ -159,6 +159,13 @@ def test_watermark_position_bottom_right(large_jpeg: Path, tmp_path: Path) -> No
     no = np.array(Image.open(out_now / "proofs" / "ev" / "large.jpg"), dtype=float)
 
     h, w = wm.shape[:2]
-    y0, x0 = int(h * 0.85), int(w * 0.70)
-    diff = (wm[y0:, x0:] - no[y0:, x0:]).mean()
-    assert diff > 0, "Watermark region should be brighter in watermarked proof"
+    tl = (wm[: int(h * 0.25), : int(w * 0.25)] - no[: int(h * 0.25), : int(w * 0.25)]).mean()
+    center = (
+        wm[int(h * 0.4): int(h * 0.6), int(w * 0.4): int(w * 0.6)]
+        - no[int(h * 0.4): int(h * 0.6), int(w * 0.4): int(w * 0.6)]
+    ).mean()
+    br = (wm[int(h * 0.75):, int(w * 0.75):] - no[int(h * 0.75):, int(w * 0.75):]).mean()
+
+    assert tl > 0, "Top-left should show watermark pattern"
+    assert center > 0, "Center should show watermark pattern"
+    assert br > 0, "Bottom-right should show watermark pattern"

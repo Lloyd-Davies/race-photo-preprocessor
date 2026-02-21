@@ -105,9 +105,10 @@ def upload_bib_tags(
     token: str,
     event_id: int,
     tags: list[dict[str, Any]],
+    replace: bool = False,
 ) -> dict[str, Any]:
     url = f"{_base(base_url)}/api/admin/events/{event_id}/tags/bibs"
-    payload = {"tags": tags}
+    payload = {"tags": tags, "replace": replace}
     with httpx.Client(timeout=60.0) as client:
         resp = client.post(url, headers=_headers(token), json=payload)
         resp.raise_for_status()

@@ -33,12 +33,14 @@ class DeployWorker(QThread):
         upload_originals: bool = True,
         upload_proofs: bool = True,
         upload_bibs: bool = True,
+        replace_bibs: bool = False,
         parent=None,
     ) -> None:
         super().__init__(parent)
         self._upload_originals = upload_originals
         self._upload_proofs = upload_proofs
         self._upload_bibs = upload_bibs
+        self._replace_bibs = replace_bibs
         self._stop = False
 
     def stop(self) -> None:
@@ -150,7 +152,7 @@ class DeployWorker(QThread):
                     }
                     for r in bib_rows
                 ]
-                result = store_api.upload_bib_tags(base_url, token, event_id, payload)
+                result = store_api.upload_bib_tags(base_url, token, event_id, payload, replace=self._replace_bibs)
                 added = result.get("added", "?")
                 self._emit_log(f"  ✔ bib tags — {added} added")
             except Exception as exc:

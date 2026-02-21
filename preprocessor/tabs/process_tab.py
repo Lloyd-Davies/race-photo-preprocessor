@@ -67,8 +67,19 @@ class ProcessTab(QWidget):
         self._stop_btn.setEnabled(False)
         self._stop_btn.clicked.connect(self._stop)
 
+        self._overwrite_cb = QCheckBox("Overwrite existing")
+        self._overwrite_cb.setChecked(not cfg.get_skip_existing())
+        self._overwrite_cb.setToolTip(
+            "Re-process files that have already been output.\n"
+            "Leave unchecked to skip photos that already exist on disk."
+        )
+        self._overwrite_cb.toggled.connect(
+            lambda checked: cfg.set_skip_existing(not checked)
+        )
+
         toolbar.addWidget(self._start_btn)
         toolbar.addWidget(self._stop_btn)
+        toolbar.addWidget(self._overwrite_cb)
         toolbar.addStretch()
 
         self._info_label = QLabel("Select images in the Import tab, then press Start.")
@@ -296,7 +307,7 @@ class ProcessTab(QWidget):
             watermark_font_scale_pct=self._wm_font_scale.value(),
             proof_size=cfg.get_proof_size(),
             proof_quality=cfg.get_proof_quality(),
-            skip_existing=cfg.get_skip_existing(),
+            skip_existing=not self._overwrite_cb.isChecked(),
             auto_bib_scan_enabled=self._bib_enabled.isChecked(),
             auto_bib_scan_backend=str(self._bib_backend.currentData()),
             auto_bib_min_confidence=self._bib_min_conf.value(),

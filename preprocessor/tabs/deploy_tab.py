@@ -70,10 +70,19 @@ class DeployTab(QWidget):
         self._cb_proofs.setChecked(True)
         self._cb_bibs = QCheckBox("Upload bib tags")
         self._cb_bibs.setChecked(True)
+        self._cb_replace_bibs = QCheckBox("Replace existing bib tags")
+        self._cb_replace_bibs.setChecked(False)
+        self._cb_replace_bibs.setToolTip(
+            "When checked, all bib tags for this event are deleted from the store before uploading.\n"
+            "Leave unchecked to add/update without removing existing tags."
+        )
+        self._cb_replace_bibs.setEnabled(self._cb_bibs.isChecked())
+        self._cb_bibs.toggled.connect(self._cb_replace_bibs.setEnabled)
 
         upload_layout.addWidget(self._cb_originals)
         upload_layout.addWidget(self._cb_proofs)
         upload_layout.addWidget(self._cb_bibs)
+        upload_layout.addWidget(self._cb_replace_bibs)
 
         btn_row = QHBoxLayout()
         btn_row.setSpacing(8)
@@ -172,6 +181,7 @@ class DeployTab(QWidget):
             upload_originals=self._cb_originals.isChecked(),
             upload_proofs=self._cb_proofs.isChecked(),
             upload_bibs=self._cb_bibs.isChecked(),
+            replace_bibs=self._cb_replace_bibs.isChecked(),
         )
         self._worker.progress.connect(self._on_progress)
         self._worker.log.connect(self._append_log)

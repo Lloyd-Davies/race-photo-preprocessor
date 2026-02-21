@@ -6,6 +6,7 @@ import sys
 from PySide6.QtCore import QSettings
 from PySide6.QtWidgets import QApplication
 
+from preprocessor.icons import create_app_icon
 from preprocessor.main_window import MainWindow
 
 # ── Sky-blue accent values ────────────────────────────────────────────────────
@@ -273,6 +274,7 @@ def main() -> None:
     app = QApplication(sys.argv)
     app.setApplicationName("Race Photo Preprocessor")
     app.setOrganizationName("RacePhotoStore")
+    app.setWindowIcon(create_app_icon())
 
     settings = QSettings("RacePhotoStore", "Preprocessor")
     dark_mode = bool(settings.value("ui/dark_mode", True))
@@ -280,6 +282,7 @@ def main() -> None:
     app.setStyleSheet(get_stylesheet(dark_mode))
 
     window = MainWindow(dark_mode=dark_mode)
+    window.setWindowIcon(create_app_icon())
     window.show()
     sys.exit(app.exec())
 

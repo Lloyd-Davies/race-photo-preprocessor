@@ -80,26 +80,9 @@ class ProcessTab(QWidget):
             lambda checked: cfg.set_skip_existing(not checked)
         )
 
-        import os as _os
-        _cpu = _os.cpu_count() or 8
-        self._workers_spin = QSpinBox()
-        self._workers_spin.setRange(0, _cpu)
-        self._workers_spin.setValue(cfg.get_worker_count())
-        self._workers_spin.setSpecialValueText("Auto")
-        self._workers_spin.setToolTip(
-            "Number of parallel threads for image processing.\n"
-            "'Auto' uses cpu_count−1.  Higher = faster but more CPU/RAM."
-        )
-        self._workers_spin.setFixedWidth(72)
-        self._workers_spin.valueChanged.connect(cfg.set_worker_count)
-        _workers_label = QLabel("Workers:")
-
         toolbar.addWidget(self._start_btn)
         toolbar.addWidget(self._stop_btn)
         toolbar.addWidget(self._overwrite_cb)
-        toolbar.addSpacing(12)
-        toolbar.addWidget(_workers_label)
-        toolbar.addWidget(self._workers_spin)
 
         self._auto_deploy_cb = QCheckBox("Auto-deploy after processing")
         self._auto_deploy_cb.setChecked(cfg.get_auto_deploy_after_process())
@@ -310,7 +293,10 @@ class ProcessTab(QWidget):
     def _start(self) -> None:
         paths = self._window.get_selected_images()
         if not paths:
-            self._info_label.setText("No images selected — go to Import tab first.")
+            # Fall back to all loaded images when nothing is explicitly selected
+            paths = self._window.import_tab.all_paths()
+        if not paths:
+            self._info_label.setText("No images loaded — go to Import tab first.")
             return
 
         slug = self._window.get_event_slug()
@@ -365,7 +351,7 @@ class ProcessTab(QWidget):
 
         self._worker = ProcessWorker(
             paths, self._config,
-            max_workers=self._workers_spin.value() or None,
+            max_workers=cfg.get_worker_count() or None,
         )
         self._worker.progress.connect(self._on_progress)
         self._worker.file_done.connect(self._on_file_done)

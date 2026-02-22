@@ -247,16 +247,7 @@ class BibsTab(QWidget):
             return
 
         if cfg.get_auto_bib_scan_backend() == "none":
-            self._status.setText("Set OCR backend to \'OCR (rapidocr)\' in the Process tab first.")
-            return
-        # Verify rapidocr_onnxruntime is actually installed
-        try:
-            import rapidocr_onnxruntime  # noqa: F401
-        except ImportError:
-            self._status.setText(
-                "rapidocr-onnxruntime is not installed. "
-                "Run: pip install rapidocr-onnxruntime"
-            )
+            self._status.setText("Set OCR backend to 'OCR (rapidocr)' in the Process tab first.")
             return
         import_paths = self._window.get_selected_images() or self._window.import_tab.all_paths()
         if not import_paths:

@@ -39,7 +39,7 @@ jobs:
         shell: pwsh
         run: |
           python -m pip install --upgrade pip
-          pip install .
+          pip install ".[dev]"
           pip install pyinstaller pillow
 
       - name: Generate executable icon
@@ -71,7 +71,7 @@ jobs:
       - name: Build executable
         shell: pwsh
         run: |
-          pyinstaller --noconfirm --clean --onefile --windowed --name preprocessor --icon build_assets/app.ico preprocessor/app.py
+          pyinstaller --noconfirm --clean --onefile --windowed --name preprocessor --icon build_assets/app.ico --collect-all rapidocr_onnxruntime --collect-all onnxruntime preprocessor/app.py
 
       - name: Prepare release assets
         shell: pwsh

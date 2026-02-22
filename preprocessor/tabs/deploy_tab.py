@@ -67,8 +67,24 @@ class DeployTab(QWidget):
 
         self._cb_originals = QCheckBox("Upload originals")
         self._cb_originals.setChecked(True)
+        self._cb_overwrite_originals = QCheckBox("  ↳ Overwrite existing originals")
+        self._cb_overwrite_originals.setChecked(False)
+        self._cb_overwrite_originals.setToolTip(
+            "Re-upload originals that are already on the server.\n"
+            "Leave unchecked to skip photos already uploaded."
+        )
+        self._cb_originals.toggled.connect(self._cb_overwrite_originals.setEnabled)
+
         self._cb_proofs = QCheckBox("Upload proofs")
         self._cb_proofs.setChecked(True)
+        self._cb_overwrite_proofs = QCheckBox("  ↳ Overwrite existing proofs")
+        self._cb_overwrite_proofs.setChecked(False)
+        self._cb_overwrite_proofs.setToolTip(
+            "Re-upload proofs that are already on the server.\n"
+            "Leave unchecked to skip photos already uploaded."
+        )
+        self._cb_proofs.toggled.connect(self._cb_overwrite_proofs.setEnabled)
+
         self._cb_bibs = QCheckBox("Upload bib tags")
         self._cb_bibs.setChecked(True)
         self._cb_replace_bibs = QCheckBox("Replace existing bib tags")
@@ -81,7 +97,9 @@ class DeployTab(QWidget):
         self._cb_bibs.toggled.connect(self._cb_replace_bibs.setEnabled)
 
         upload_layout.addWidget(self._cb_originals)
+        upload_layout.addWidget(self._cb_overwrite_originals)
         upload_layout.addWidget(self._cb_proofs)
+        upload_layout.addWidget(self._cb_overwrite_proofs)
         upload_layout.addWidget(self._cb_bibs)
         upload_layout.addWidget(self._cb_replace_bibs)
 
@@ -196,6 +214,8 @@ class DeployTab(QWidget):
             upload_proofs=self._cb_proofs.isChecked(),
             upload_bibs=self._cb_bibs.isChecked(),
             replace_bibs=self._cb_replace_bibs.isChecked(),
+            overwrite_originals=self._cb_overwrite_originals.isChecked(),
+            overwrite_proofs=self._cb_overwrite_proofs.isChecked(),
             max_workers=self._connections_spin.value(),
         )
         self._worker.progress.connect(self._on_progress)

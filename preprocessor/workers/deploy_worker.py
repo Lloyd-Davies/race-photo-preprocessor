@@ -38,6 +38,8 @@ class DeployWorker(QThread):
         upload_proofs: bool = True,
         upload_bibs: bool = True,
         replace_bibs: bool = False,
+        overwrite_originals: bool = False,
+        overwrite_proofs: bool = False,
         max_workers: int | None = None,
         parent=None,
     ) -> None:
@@ -46,6 +48,8 @@ class DeployWorker(QThread):
         self._upload_proofs = upload_proofs
         self._upload_bibs = upload_bibs
         self._replace_bibs = replace_bibs
+        self._overwrite_originals = overwrite_originals
+        self._overwrite_proofs = overwrite_proofs
         self._max_workers = max_workers if (max_workers and max_workers > 0) else _UPLOAD_DEFAULT_WORKERS
         self._stop = False
 
@@ -151,10 +155,13 @@ class DeployWorker(QThread):
         # ── Skip already-uploaded ─────────────────────────────────────────────
         already_uploaded = store_api.get_uploaded_photo_ids(base_url, token, event_id)
         if already_uploaded:
-            before = len(originals) + len(proofs)
-            originals = [p for p in originals if p.stem not in already_uploaded]
-            proofs = [p for p in proofs if p.stem not in already_uploaded]
-            skipped = before - len(originals) - len(proofs)
+            before_orig = len(originals)
+            before_proof = len(proofs)
+            if not self._overwrite_originals:
+                originals = [p for p in originals if p.stem not in already_uploaded]
+            if not self._overwrite_proofs:
+                proofs = [p for p in proofs if p.stem not in already_uploaded]
+            skipped = (before_orig - len(originals)) + (before_proof - len(proofs))
             if skipped:
                 self._emit_log(f"{skipped} photo(s) already on server — skipping.")
 

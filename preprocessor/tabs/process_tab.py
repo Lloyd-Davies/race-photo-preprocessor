@@ -11,6 +11,7 @@ from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
     QFormLayout,
+    QFrame,
     QGroupBox,
     QHBoxLayout,
     QHeaderView,
@@ -19,6 +20,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QProgressBar,
     QPushButton,
+    QScrollArea,
     QSpinBox,
     QSizePolicy,
     QTableWidget,
@@ -54,7 +56,18 @@ class ProcessTab(QWidget):
         self._config: ProcessConfig | None = None
         self._stop_requested: bool = False
 
-        root = QVBoxLayout(self)
+        _outer = QVBoxLayout(self)
+        _outer.setContentsMargins(0, 0, 0, 0)
+        _outer.setSpacing(0)
+        _scroll = QScrollArea()
+        _scroll.setWidgetResizable(True)
+        _scroll.setFrameShape(QFrame.Shape.NoFrame)
+        _outer.addWidget(_scroll)
+        _inner = QWidget()
+        _inner.setMinimumWidth(480)
+        _scroll.setWidget(_inner)
+
+        root = QVBoxLayout(_inner)
         root.setContentsMargins(16, 16, 16, 16)
         root.setSpacing(10)
 

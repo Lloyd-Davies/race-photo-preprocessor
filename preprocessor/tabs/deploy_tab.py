@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
     QPushButton,
     QSizePolicy,
     QSpacerItem,
+    QSpinBox,
     QVBoxLayout,
     QWidget,
 )
@@ -93,8 +94,21 @@ class DeployTab(QWidget):
         self._stop_btn.setProperty("secondary", True)
         self._stop_btn.setEnabled(False)
         self._stop_btn.clicked.connect(self._on_stop)
+        self._connections_spin = QSpinBox()
+        self._connections_spin.setRange(1, 16)
+        self._connections_spin.setValue(cfg.get_upload_worker_count() or 4)
+        self._connections_spin.setToolTip(
+            "Number of simultaneous HTTP upload connections per batch.\n"
+            "Higher = faster on fast connections; too high may overload the server."
+        )
+        self._connections_spin.setFixedWidth(60)
+        self._connections_spin.valueChanged.connect(cfg.set_upload_worker_count)
+        _conn_label = QLabel("Connections:")
         btn_row.addWidget(self._upload_btn)
         btn_row.addWidget(self._stop_btn)
+        btn_row.addSpacing(12)
+        btn_row.addWidget(_conn_label)
+        btn_row.addWidget(self._connections_spin)
         btn_row.addStretch()
         upload_layout.addLayout(btn_row)
 
@@ -182,6 +196,7 @@ class DeployTab(QWidget):
             upload_proofs=self._cb_proofs.isChecked(),
             upload_bibs=self._cb_bibs.isChecked(),
             replace_bibs=self._cb_replace_bibs.isChecked(),
+            max_workers=self._connections_spin.value(),
         )
         self._worker.progress.connect(self._on_progress)
         self._worker.log.connect(self._append_log)

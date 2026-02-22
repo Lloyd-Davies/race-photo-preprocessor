@@ -2,12 +2,16 @@
 from __future__ import annotations
 
 import csv
+import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 import preprocessor.config as cfg
 from preprocessor import store_api
 
 from PySide6.QtCore import QThread, Signal
+
+_UPLOAD_DEFAULT_WORKERS = 4
 
 
 class DeployWorker(QThread):
@@ -34,6 +38,7 @@ class DeployWorker(QThread):
         upload_proofs: bool = True,
         upload_bibs: bool = True,
         replace_bibs: bool = False,
+        max_workers: int | None = None,
         parent=None,
     ) -> None:
         super().__init__(parent)
@@ -41,6 +46,7 @@ class DeployWorker(QThread):
         self._upload_proofs = upload_proofs
         self._upload_bibs = upload_bibs
         self._replace_bibs = replace_bibs
+        self._max_workers = max_workers if (max_workers and max_workers > 0) else _UPLOAD_DEFAULT_WORKERS
         self._stop = False
 
     def stop(self) -> None:
@@ -55,6 +61,54 @@ class DeployWorker(QThread):
         if self._stop:
             self.finished.emit(False, "Cancelled by user.")
         return self._stop
+
+    def _upload_batch(
+        self,
+        files: list[Path],
+        kind: str,
+        base_url: str,
+        token: str,
+        event_id: int,
+        current_start: int,
+        total: int,
+    ) -> tuple[int, int]:
+        """Upload a batch of files in parallel.
+
+        Returns (errors, new_current) where new_current = current_start + len(files).
+        Honours self._stop: cancels pending futures and returns early.
+        """
+        errors = 0
+        counter = current_start
+        lock = threading.Lock()
+
+        def _do(path: Path) -> str:
+            store_api.upload_photo(base_url, token, event_id, path.stem, kind, path)
+            return path.stem
+
+        with ThreadPoolExecutor(
+            max_workers=min(self._max_workers, len(files)),
+            thread_name_prefix="upload",
+        ) as ex:
+            future_map = {ex.submit(_do, p): p for p in files}
+            for future in as_completed(future_map):
+                path = future_map[future]
+                photo_id = path.stem
+                with lock:
+                    counter += 1
+                    c = counter
+                self.progress.emit(c, total, f"Uploading {kind}: {photo_id}")
+                if self._stop:
+                    for f in future_map:
+                        f.cancel()
+                    break
+                try:
+                    future.result()
+                    self._emit_log(f"  \u2714 {kind} {photo_id}")
+                except Exception as exc:
+                    self._emit_log(f"  \u2716 {kind} {photo_id} \u2014 {store_api._user_error(exc)}")
+                    errors += 1
+
+        return errors, counter
 
     # ── Main run ──────────────────────────────────────────────────────────────
 
@@ -94,6 +148,16 @@ class DeployWorker(QThread):
         originals = sorted(originals_dir.glob("*.jpg")) if (self._upload_originals and originals_dir.exists()) else []
         proofs = sorted(proofs_dir.glob("*.jpg")) if (self._upload_proofs and proofs_dir.exists()) else []
 
+        # ── Skip already-uploaded ─────────────────────────────────────────────
+        already_uploaded = store_api.get_uploaded_photo_ids(base_url, token, event_id)
+        if already_uploaded:
+            before = len(originals) + len(proofs)
+            originals = [p for p in originals if p.stem not in already_uploaded]
+            proofs = [p for p in proofs if p.stem not in already_uploaded]
+            skipped = before - len(originals) - len(proofs)
+            if skipped:
+                self._emit_log(f"{skipped} photo(s) already on server — skipping.")
+
         bib_rows: list[dict] = []
         if self._upload_bibs and bibs_csv.exists():
             try:
@@ -109,34 +173,28 @@ class DeployWorker(QThread):
 
         current = 0
 
-        # ── Upload originals ──────────────────────────────────────────────────
+        # ── Upload proofs ──────────────────────────────────────────────────
         errors = 0
-        for path in originals:
-            if self._check_stop():
+        if proofs:
+            self._emit_log(f"Uploading {len(proofs)} proof(s) ({self._max_workers} connections)…")
+            batch_errors, current = self._upload_batch(
+                proofs, "proof", base_url, token, event_id, current, total
+            )
+            errors += batch_errors
+            if self._stop:
+                self.finished.emit(False, "Cancelled by user.")
                 return
-            photo_id = path.stem
-            self.progress.emit(current, total, f"Uploading original: {photo_id}")
-            try:
-                store_api.upload_photo(base_url, token, event_id, photo_id, "original", path)
-                self._emit_log(f"  ✔ original {photo_id}")
-            except Exception as exc:
-                self._emit_log(f"  ✖ original {photo_id} — {store_api._user_error(exc)}")
-                errors += 1
-            current += 1
 
-        # ── Upload proofs ─────────────────────────────────────────────────────
-        for path in proofs:
-            if self._check_stop():
+        # ── Upload originals ───────────────────────────────────────────────
+        if originals:
+            self._emit_log(f"Uploading {len(originals)} original(s) ({self._max_workers} connections)…")
+            batch_errors, current = self._upload_batch(
+                originals, "original", base_url, token, event_id, current, total
+            )
+            errors += batch_errors
+            if self._stop:
+                self.finished.emit(False, "Cancelled by user.")
                 return
-            photo_id = path.stem
-            self.progress.emit(current, total, f"Uploading proof: {photo_id}")
-            try:
-                store_api.upload_photo(base_url, token, event_id, photo_id, "proof", path)
-                self._emit_log(f"  ✔ proof {photo_id}")
-            except Exception as exc:
-                self._emit_log(f"  ✖ proof {photo_id} — {store_api._user_error(exc)}")
-                errors += 1
-            current += 1
 
         # ── Upload bib tags ───────────────────────────────────────────────────
         if bib_rows:

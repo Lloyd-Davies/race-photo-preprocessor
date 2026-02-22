@@ -57,11 +57,41 @@ def test_photo_id_is_stem(photo_folder: Path, tmp_path: Path) -> None:
     config = ProcessConfig(event_slug="my-event", output_root=output)
     source = str(photo_folder / "DSC_002.jpg")
 
-    process_photo(source, config)
+    result = process_photo(source, config)
 
     assert (output / "proofs" / "my-event" / "DSC_002.jpg").exists()
     assert (output / "originals" / "my-event" / "DSC_002.jpg").exists()
     assert not (output / "proofs" / "my-event" / "DSC_001.jpg").exists()
+    assert result.photo_id == "DSC_002"
+
+
+def test_explicit_photo_id(photo_folder: Path, tmp_path: Path) -> None:
+    """Passing photo_id overrides the output filename stem."""
+    output = tmp_path / "output"
+    config = ProcessConfig(event_slug="my-event", output_root=output)
+    source = str(photo_folder / "DSC_002.jpg")
+
+    result = process_photo(source, config, photo_id="my-event-0042")
+
+    assert result.success
+    assert result.photo_id == "my-event-0042"
+    assert (output / "proofs" / "my-event" / "my-event-0042.jpg").exists()
+    assert (output / "originals" / "my-event" / "my-event-0042.jpg").exists()
+    # Original camera filename must NOT appear in outputs
+    assert not (output / "proofs" / "my-event" / "DSC_002.jpg").exists()
+
+
+def test_explicit_photo_id_skip_existing(photo_folder: Path, tmp_path: Path) -> None:
+    """skip_existing respects the explicit photo_id path."""
+    output = tmp_path / "output"
+    config = ProcessConfig(event_slug="ev", output_root=output, skip_existing=True)
+    source = str(photo_folder / "DSC_001.jpg")
+
+    r1 = process_photo(source, config, photo_id="ev-0001")
+    assert r1.success and not r1.skipped and r1.photo_id == "ev-0001"
+
+    r2 = process_photo(source, config, photo_id="ev-0001")
+    assert r2.success and r2.skipped and r2.photo_id == "ev-0001"
 
 
 # ── Phase 3 — Pillow pipeline ─────────────────────────────────────────────────

@@ -29,6 +29,7 @@ from PySide6.QtWidgets import (
 import preprocessor.config as cfg
 from preprocessor.pipeline import ProcessConfig, ProcessResult
 from preprocessor.workers.process_worker import ProcessWorker
+from preprocessor.workers.deploy_worker import DeployWorker
 from preprocessor.bib_results import ensure_bib_csv
 
 if TYPE_CHECKING:
@@ -46,9 +47,11 @@ class ProcessTab(QWidget):
         super().__init__(parent)
         self._window = parent
         self._worker: ProcessWorker | None = None
+        self._deploy_worker: DeployWorker | None = None
         self._start_time: float = 0.0
         self._total: int = 0
         self._config: ProcessConfig | None = None
+        self._stop_requested: bool = False
 
         root = QVBoxLayout(self)
         root.setContentsMargins(16, 16, 16, 16)
@@ -77,9 +80,37 @@ class ProcessTab(QWidget):
             lambda checked: cfg.set_skip_existing(not checked)
         )
 
+        import os as _os
+        _cpu = _os.cpu_count() or 8
+        self._workers_spin = QSpinBox()
+        self._workers_spin.setRange(0, _cpu)
+        self._workers_spin.setValue(cfg.get_worker_count())
+        self._workers_spin.setSpecialValueText("Auto")
+        self._workers_spin.setToolTip(
+            "Number of parallel threads for image processing.\n"
+            "'Auto' uses cpu_count−1.  Higher = faster but more CPU/RAM."
+        )
+        self._workers_spin.setFixedWidth(72)
+        self._workers_spin.valueChanged.connect(cfg.set_worker_count)
+        _workers_label = QLabel("Workers:")
+
         toolbar.addWidget(self._start_btn)
         toolbar.addWidget(self._stop_btn)
         toolbar.addWidget(self._overwrite_cb)
+        toolbar.addSpacing(12)
+        toolbar.addWidget(_workers_label)
+        toolbar.addWidget(self._workers_spin)
+
+        self._auto_deploy_cb = QCheckBox("Auto-deploy after processing")
+        self._auto_deploy_cb.setChecked(cfg.get_auto_deploy_after_process())
+        self._auto_deploy_cb.setToolTip(
+            "After processing completes with no errors, automatically upload proofs\n"
+            "and originals to the store using the current Store API settings."
+        )
+        self._auto_deploy_cb.toggled.connect(cfg.set_auto_deploy_after_process)
+        toolbar.addSpacing(12)
+        toolbar.addWidget(self._auto_deploy_cb)
+
         toolbar.addStretch()
 
         self._info_label = QLabel("Select images in the Import tab, then press Start.")
@@ -324,6 +355,7 @@ class ProcessTab(QWidget):
         self._preview_name.clear()
         self._total = len(paths)
         self._start_time = time.monotonic()
+        self._stop_requested = False
         self._progress.setMaximum(self._total)
         self._progress.setValue(0)
         self._progress.show()
@@ -331,7 +363,10 @@ class ProcessTab(QWidget):
         self._stop_btn.setEnabled(True)
         self._info_label.clear()
 
-        self._worker = ProcessWorker(paths, self._config)
+        self._worker = ProcessWorker(
+            paths, self._config,
+            max_workers=self._workers_spin.value() or None,
+        )
         self._worker.progress.connect(self._on_progress)
         self._worker.file_done.connect(self._on_file_done)
         self._worker.finished.connect(self._on_finished)
@@ -339,6 +374,7 @@ class ProcessTab(QWidget):
 
     def _stop(self) -> None:
         if self._worker and self._worker.isRunning():
+            self._stop_requested = True
             self._stop_btn.setEnabled(False)
             self._worker.stop()
 
@@ -442,6 +478,27 @@ class ProcessTab(QWidget):
             self._worker.deleteLater()
             self._worker = None
 
+        # ── Auto-deploy ──────────────────────────────────────────────────
+        if (
+            not self._stop_requested
+            and errors == 0
+            and self._auto_deploy_cb.isChecked()
+        ):
+            upload_workers = cfg.get_upload_worker_count() or None
+            self._window.set_status("Auto-deploying to store…")
+            self._deploy_worker = DeployWorker(
+                upload_originals=True,
+                upload_proofs=True,
+                upload_bibs=False,
+                max_workers=upload_workers,
+                parent=self,
+            )
+            self._deploy_worker.log.connect(
+                lambda msg: self._window.set_status(msg)
+            )
+            self._deploy_worker.finished.connect(self._on_auto_deploy_finished)
+            self._deploy_worker.start()
+
     def _on_pattern_changed(self) -> None:
         single = self._wm_pattern.currentData() == "single-corner"
         self._wm_position.setEnabled(single)
@@ -466,3 +523,9 @@ class ProcessTab(QWidget):
 
     def _on_bib_digits_toggle(self, checked: bool) -> None:
         self._bib_min_digits.setEnabled(checked)
+
+    def _on_auto_deploy_finished(self, success: bool, message: str) -> None:
+        self._window.set_status(f"Deploy: {message}")
+        if self._deploy_worker:
+            self._deploy_worker.deleteLater()
+            self._deploy_worker = None

@@ -163,6 +163,20 @@ def get_skip_existing() -> bool:
 def set_skip_existing(v: bool) -> None:
     _s().setValue("process/skip_existing", v)
 
+def get_worker_count() -> int:
+    """0 = auto (cpu-1).  Positive value = explicit thread count."""
+    return int(_s().value("process/worker_count", 0))  # type: ignore[arg-type]
+
+def set_worker_count(v: int) -> None:
+    _s().setValue("process/worker_count", v)
+
+def get_upload_worker_count() -> int:
+    """Concurrent HTTP upload connections.  0 = use default (4)."""
+    return int(_s().value("process/upload_worker_count", 0))  # type: ignore[arg-type]
+
+def set_upload_worker_count(v: int) -> None:
+    _s().setValue("process/upload_worker_count", v)
+
 def get_auto_bib_scan_enabled() -> bool:
     return _s().value("process/auto_bib_scan_enabled", False, type=bool)  # type: ignore[call-overload]
 
@@ -192,6 +206,12 @@ def get_auto_bib_min_digits() -> int:
 
 def set_auto_bib_min_digits(v: int) -> None:
     _s().setValue("process/auto_bib_min_digits", v)
+
+def get_auto_deploy_after_process() -> bool:
+    return _s().value("process/auto_deploy_after_process", False, type=bool)  # type: ignore[call-overload]
+
+def set_auto_deploy_after_process(v: bool) -> None:
+    _s().setValue("process/auto_deploy_after_process", v)
 
 
 # ── Last used import folder ───────────────────────────────────────────────────

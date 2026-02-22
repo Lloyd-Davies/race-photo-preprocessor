@@ -1,6 +1,8 @@
 """Background worker for bib OCR scanning."""
 from __future__ import annotations
 
+import os
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 from PySide6.QtCore import QThread, Signal
@@ -30,37 +32,76 @@ class BibOcrWorker(QThread):
         self,
         paths: list[str],
         config: ProcessConfig,
+        max_workers: int | None = None,
         parent=None,
     ) -> None:
         super().__init__(parent)
         self._paths = list(paths)
         self._config = config
+        self._max_workers = max_workers
         self._stop_requested = False
 
     def stop(self) -> None:
         self._stop_requested = True
+
+    def _worker_count(self, total: int) -> int:
+        if self._max_workers is not None and self._max_workers > 0:
+            return min(self._max_workers, total)
+        cpu = os.cpu_count() or 4
+        return max(1, min(total, max(2, cpu - 1)))
 
     def run(self) -> None:
         total = len(self._paths)
         files_with_hits = 0
         total_bibs = 0
 
-        for idx, path in enumerate(self._paths, start=1):
-            if self._stop_requested:
-                break
+        if total == 0:
+            self.finished.emit(0, 0)
+            return
 
-            self.progress.emit(idx, total, Path(path).name)
+        n_workers = self._worker_count(total)
 
-            try:
-                detections = scan_bibs_for_photo(path, self._config)
-            except Exception:
-                continue
+        if n_workers <= 1:
+            # ── Serial path ───────────────────────────────────────────────────
+            for idx, path in enumerate(self._paths, start=1):
+                if self._stop_requested:
+                    break
+                self.progress.emit(idx, total, Path(path).name)
+                try:
+                    detections = scan_bibs_for_photo(path, self._config)
+                except Exception:
+                    continue
+                if detections:
+                    bibs = [d.bib for d in detections]
+                    avg_conf = sum(d.confidence for d in detections) / len(detections)
+                    files_with_hits += 1
+                    total_bibs += len(bibs)
+                    self.photo_done.emit(Path(path).stem, bibs, avg_conf)
+        else:
+            # ── Parallel path ─────────────────────────────────────────────────
+            def _scan(p: str):
+                return p, scan_bibs_for_photo(p, self._config)
 
-            if detections:
-                bibs = [d.bib for d in detections]
-                avg_conf = sum(d.confidence for d in detections) / len(detections)
-                files_with_hits += 1
-                total_bibs += len(bibs)
-                self.photo_done.emit(Path(path).stem, bibs, avg_conf)
+            current = 0
+            with ThreadPoolExecutor(max_workers=n_workers, thread_name_prefix="ocr") as ex:
+                future_map = {ex.submit(_scan, p): p for p in self._paths}
+                for future in as_completed(future_map):
+                    current += 1
+                    path = future_map[future]
+                    self.progress.emit(current, total, Path(path).name)
+                    if self._stop_requested:
+                        for f in future_map:
+                            f.cancel()
+                        break
+                    try:
+                        _, detections = future.result()
+                    except Exception:
+                        continue
+                    if detections:
+                        bibs = [d.bib for d in detections]
+                        avg_conf = sum(d.confidence for d in detections) / len(detections)
+                        files_with_hits += 1
+                        total_bibs += len(bibs)
+                        self.photo_done.emit(Path(path).stem, bibs, avg_conf)
 
         self.finished.emit(files_with_hits, total_bibs)

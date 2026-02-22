@@ -3,10 +3,12 @@ from __future__ import annotations
 
 import os
 from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
+from pathlib import Path
 
 from PySide6.QtCore import QThread, Signal
 
 from preprocessor.pipeline import ProcessConfig, ProcessResult, process_photo
+from preprocessor.rename import build_rename_plan, write_rename_map
 
 
 class ProcessWorker(QThread):
@@ -31,11 +33,13 @@ class ProcessWorker(QThread):
         self,
         paths: list[str],
         config: ProcessConfig,
+        max_workers: int | None = None,
         parent=None,
     ) -> None:
         super().__init__(parent)
         self._paths = list(paths)
         self._config = config
+        self._max_workers = max_workers
         self._stop_requested = False
 
     # ── Public ────────────────────────────────────────────────────────────────
@@ -45,6 +49,8 @@ class ProcessWorker(QThread):
         self._stop_requested = True
 
     def _recommended_workers(self, total: int) -> int:
+        if self._max_workers is not None and self._max_workers > 0:
+            return min(self._max_workers, total)
         if total <= 1:
             return 1
         cpu = os.cpu_count() or 4
@@ -61,15 +67,26 @@ class ProcessWorker(QThread):
             self.finished.emit(results)
             return
 
+        # Build rename plan (natural-sorted) and write the mapping CSV before
+        # any processing begins so the map is always present even if cancelled.
+        plan = build_rename_plan([Path(p) for p in self._paths], self._config.event_slug)
+        map_csv = (
+            self._config.output_root
+            / "originals"
+            / self._config.event_slug
+            / "_rename_map.csv"
+        )
+        write_rename_map(plan, map_csv)
+
         max_workers = self._recommended_workers(total)
 
         if max_workers <= 1:
-            for idx, path in enumerate(self._paths, start=1):
+            for idx, (path, photo_id) in enumerate(plan, start=1):
                 if self._stop_requested:
                     break
 
-                self.progress.emit(idx, total, path)
-                result = process_photo(path, self._config)
+                self.progress.emit(idx, total, str(path))
+                result = process_photo(str(path), self._config, photo_id)
                 results.append(result)
                 self.file_done.emit(result)
 
@@ -77,7 +94,7 @@ class ProcessWorker(QThread):
             return
 
         executor = ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="process")
-        futures: dict[Future[ProcessResult], tuple[int, str]] = {}
+        futures: dict[Future[ProcessResult], tuple[int, str, str]] = {}
         submitted = 0
 
         def submit_next() -> bool:
@@ -87,12 +104,12 @@ class ProcessWorker(QThread):
             if submitted >= total:
                 return False
 
-            path = self._paths[submitted]
+            path, photo_id = plan[submitted]
             submitted += 1
-            self.progress.emit(submitted, total, path)
+            self.progress.emit(submitted, total, str(path))
 
-            future = executor.submit(process_photo, path, self._config)
-            futures[future] = (submitted, path)
+            future = executor.submit(process_photo, str(path), self._config, photo_id)
+            futures[future] = (submitted, str(path), photo_id)
             return True
 
         try:
@@ -104,7 +121,7 @@ class ProcessWorker(QThread):
                 done, _pending = wait(list(futures.keys()), return_when=FIRST_COMPLETED)
 
                 for future in done:
-                    _idx, path = futures.pop(future)
+                    _idx, path, _pid = futures.pop(future)
                     if self._stop_requested:
                         continue
 

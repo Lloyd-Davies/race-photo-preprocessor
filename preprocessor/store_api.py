@@ -84,21 +84,47 @@ def list_events(base_url: str, token: str) -> list[dict[str, Any]]:
     return data if isinstance(data, list) else []
 
 
+def list_admin_events(base_url: str, token: str) -> list[dict[str, Any]]:
+    """Return all events (any status) via the admin endpoint."""
+    url = f"{_base(base_url)}/api/admin/events"
+    with httpx.Client(timeout=20.0) as client:
+        resp = client.get(url, headers=_headers(token))
+        resp.raise_for_status()
+        data = resp.json()
+    return data if isinstance(data, list) else []
+
+
 def find_event_id_by_slug(base_url: str, token: str, slug: str) -> int | None:
-    try:
-        events = list_events(base_url, token)
-    except Exception:
-        return None
-    for event in events:
-        if str(event.get("slug", "")).strip().lower() == slug.strip().lower():
-            try:
-                return int(event["id"])
-            except Exception:
-                return None
+    """Look up an event by slug; tries the admin endpoint first (returns all
+    statuses), falls back to the public events list on error."""
+    for fetch in (list_admin_events, list_events):
+        try:
+            events = fetch(base_url, token)
+            for event in events:
+                if str(event.get("slug", "")).strip().lower() == slug.strip().lower():
+                    try:
+                        return int(event["id"])
+                    except Exception:
+                        return None
+        except Exception:
+            continue
     return None
 
 
 # ── Bib tags ──────────────────────────────────────────────────────────────────
+
+def get_uploaded_photo_ids(base_url: str, token: str, event_id: int) -> set[str]:
+    """Return the set of photo_id stems already on the store for *event_id*."""
+    url = f"{_base(base_url)}/api/admin/events/{event_id}/photo_ids"
+    try:
+        with httpx.Client(timeout=20.0) as client:
+            resp = client.get(url, headers=_headers(token))
+            resp.raise_for_status()
+            data = resp.json()
+        return set(data.get("photo_ids", []))
+    except Exception:
+        return set()
+
 
 def upload_bib_tags(
     base_url: str,

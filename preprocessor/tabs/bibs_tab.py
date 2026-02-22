@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QProgressBar,
     QPushButton,
+    QSpinBox,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
@@ -63,10 +64,27 @@ class BibsTab(QWidget):
         self._upload_btn.setFixedHeight(34)
         self._upload_btn.clicked.connect(self.upload_to_store)
 
+        import os as _os
+        _cpu = _os.cpu_count() or 8
+        self._workers_spin = QSpinBox()
+        self._workers_spin.setRange(0, _cpu)
+        self._workers_spin.setValue(cfg.get_worker_count())
+        self._workers_spin.setSpecialValueText("Auto")
+        self._workers_spin.setToolTip(
+            "Number of parallel threads for OCR scanning.\n"
+            "'Auto' uses cpu_count−1.  Higher = faster but more CPU usage."
+        )
+        self._workers_spin.setFixedWidth(72)
+        self._workers_spin.valueChanged.connect(cfg.set_worker_count)
+        _workers_label = QLabel("Workers:")
+
         top.addWidget(self._load_btn)
         top.addWidget(self._run_ocr_btn)
         top.addWidget(self._stop_btn)
         top.addWidget(self._remove_btn)
+        top.addSpacing(12)
+        top.addWidget(_workers_label)
+        top.addWidget(self._workers_spin)
         top.addStretch()
         top.addWidget(self._upload_btn)
         layout.addLayout(top)
@@ -116,17 +134,34 @@ class BibsTab(QWidget):
             return None
         return bib_csv_path(Path(output_root), slug)
 
-    def _resolve_scan_path(self, src: str) -> str:
+    def _load_rename_map(self, slug: str, output_root: str) -> dict[str, str]:
+        """Return {original_filename_stem: photo_id} from _rename_map.csv, or {} if absent."""
+        import csv as _csv
+        map_path = Path(output_root) / "originals" / slug / "_rename_map.csv"
+        if not map_path.exists():
+            return {}
+        try:
+            with map_path.open("r", encoding="utf-8", newline="") as f:
+                return {
+                    Path(row["original_name"]).stem: row["photo_id"]
+                    for row in _csv.DictReader(f)
+                }
+        except Exception:
+            return {}
+
+    def _resolve_scan_path(self, src: str, rename_map: dict[str, str] | None = None) -> str:
         """Return the best path to scan for bib OCR.
 
-        Prefer the pixel-perfect original copy (no watermark) over the proof
-        (which has a watermark overlay that degrades OCR accuracy).  Fall back
-        to the import source path if neither copy exists yet.
+        Uses rename_map (original_stem → photo_id) to locate the correctly
+        named original.  Falls back to the import source path if originals
+        haven't been generated yet or the rename map is absent.
         """
         slug = self._event_slug()
         output_root = cfg.get_output_root().strip()
         if slug and output_root:
-            original = Path(output_root) / "originals" / slug / f"{Path(src).stem}.jpg"
+            stem = Path(src).stem
+            photo_id = (rename_map or {}).get(stem, stem)
+            original = Path(output_root) / "originals" / slug / f"{photo_id}.jpg"
             if original.exists():
                 return str(original)
         return src
@@ -220,9 +255,10 @@ class BibsTab(QWidget):
             self._status.setText("No images available — import some in the Import tab first.")
             return
 
-        # Prefer the pixel-perfect original (no watermark) for best OCR accuracy.
-        # Falls back to the import source if originals haven't been generated yet.
-        scan_paths = [self._resolve_scan_path(p) for p in import_paths]
+        # Load rename map so scan paths use the renamed photo_id filenames,
+        # not the original camera names.  Falls back gracefully if absent.
+        rename_map = self._load_rename_map(slug, output_root)
+        scan_paths = [self._resolve_scan_path(p, rename_map) for p in import_paths]
 
         config = ProcessConfig(
             event_slug=slug,
@@ -244,7 +280,10 @@ class BibsTab(QWidget):
         self._stop_btn.setEnabled(True)
         self._status.setText("")
 
-        self._ocr_worker = BibOcrWorker(scan_paths, config)
+        self._ocr_worker = BibOcrWorker(
+            scan_paths, config,
+            max_workers=self._workers_spin.value() or None,
+        )
         self._ocr_worker.progress.connect(self._on_ocr_progress)
         self._ocr_worker.photo_done.connect(self._on_photo_done)
         self._ocr_worker.finished.connect(self._on_ocr_finished)

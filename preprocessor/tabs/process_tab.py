@@ -183,6 +183,7 @@ class ProcessTab(QWidget):
 
         self._bib_enabled = QCheckBox("Enable auto bib scanning")
         self._bib_enabled.setChecked(cfg.get_auto_bib_scan_enabled())
+        self._bib_enabled.toggled.connect(cfg.set_auto_bib_scan_enabled)
         bib_form.addRow(self._bib_enabled)
 
         self._bib_backend = QComboBox()
@@ -191,22 +192,28 @@ class ProcessTab(QWidget):
         backend_value = cfg.get_auto_bib_scan_backend()
         backend_idx = max(0, self._bib_backend.findData(backend_value))
         self._bib_backend.setCurrentIndex(backend_idx)
+        self._bib_backend.currentIndexChanged.connect(
+            lambda: cfg.set_auto_bib_scan_backend(str(self._bib_backend.currentData()))
+        )
         bib_form.addRow("Backend", self._bib_backend)
 
         self._bib_min_conf = QSpinBox()
         self._bib_min_conf.setRange(1, 100)
         self._bib_min_conf.setValue(cfg.get_auto_bib_min_confidence())
         self._bib_min_conf.setSuffix(" %")
+        self._bib_min_conf.valueChanged.connect(cfg.set_auto_bib_min_confidence)
         bib_form.addRow("Min confidence", self._bib_min_conf)
 
         self._bib_enforce_min_digits = QCheckBox("Enforce minimum bib length")
         self._bib_enforce_min_digits.setChecked(cfg.get_auto_bib_enforce_min_digits())
         self._bib_enforce_min_digits.toggled.connect(self._on_bib_digits_toggle)
+        self._bib_enforce_min_digits.toggled.connect(cfg.set_auto_bib_enforce_min_digits)
         bib_form.addRow(self._bib_enforce_min_digits)
 
         self._bib_min_digits = QSpinBox()
         self._bib_min_digits.setRange(1, 6)
         self._bib_min_digits.setValue(cfg.get_auto_bib_min_digits())
+        self._bib_min_digits.valueChanged.connect(cfg.set_auto_bib_min_digits)
         bib_form.addRow("Min digits", self._bib_min_digits)
         self._on_bib_digits_toggle(self._bib_enforce_min_digits.isChecked())
 

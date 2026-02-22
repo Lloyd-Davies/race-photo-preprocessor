@@ -4,9 +4,11 @@ Backend-neutral interface — currently supports `none` (no-op) and `ocr` (Rapid
 """
 from __future__ import annotations
 
+import threading
 from dataclasses import dataclass
 
 _RAPID_OCR_ENGINE = None
+_OCR_LOCK = threading.Lock()
 
 
 @dataclass
@@ -36,7 +38,8 @@ def extract_text_candidates(photo_path: str, backend: str = "none") -> list[OCRT
     if _RAPID_OCR_ENGINE is None:
         _RAPID_OCR_ENGINE = RapidOCR()
 
-    result, _elapsed = _RAPID_OCR_ENGINE(photo_path)
+    with _OCR_LOCK:
+        result, _elapsed = _RAPID_OCR_ENGINE(photo_path)
     if not result:
         return []
 

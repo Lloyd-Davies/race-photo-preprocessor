@@ -84,20 +84,6 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.RELEASE_TAG }}
-          name: Race Photo Pre-Processor ${{ env.RELEASE_TAG }}
-          body: |
-            ## Race Photo Pre-Processor ${{ env.RELEASE_TAG }}
-
-            Desktop tool for preparing race photos before upload.
-
-            ### Download
-            - `race-photo-preprocessor-windows.exe` — standalone Windows app
-            - `race-photo-preprocessor-windows.zip` — zipped executable
-
-            ### Highlights
-            - Configurable watermark controls in Process tab
-            - Diagonal repeat and single-corner watermark modes
-            - Minimal camera-themed app icon
           files: |
             release/race-photo-preprocessor-windows.exe
             release/race-photo-preprocessor-windows.zip

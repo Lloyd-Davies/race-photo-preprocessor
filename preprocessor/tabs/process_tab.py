@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
     QHeaderView,
     QLabel,
     QLineEdit,
+    QMessageBox,
     QProgressBar,
     QPushButton,
     QSpinBox,
@@ -293,10 +294,7 @@ class ProcessTab(QWidget):
     def _start(self) -> None:
         paths = self._window.get_selected_images()
         if not paths:
-            # Fall back to all loaded images when nothing is explicitly selected
-            paths = self._window.import_tab.all_paths()
-        if not paths:
-            self._info_label.setText("No images loaded — go to Import tab first.")
+            QMessageBox.warning(self, "No images selected", "Select images in the Import tab before processing.")
             return
 
         slug = self._window.get_event_slug()

@@ -29,7 +29,7 @@ def _seed_event_files(root: Path, slug: str, ids: list[str]) -> None:
 
 def _patch_cfg(monkeypatch, tmp_path: Path, slug: str = "test-event") -> None:
     monkeypatch.setattr(cfg, "get_store_url", lambda: "http://fake-store")
-    monkeypatch.setattr(cfg, "get_store_token", lambda: "testtoken")
+    monkeypatch.setattr(cfg, "get_admin_credential", lambda: "testtoken")
     monkeypatch.setattr(cfg, "get_event_slug", lambda: slug)
     monkeypatch.setattr(cfg, "get_output_root", lambda: str(tmp_path))
 
@@ -118,7 +118,7 @@ def test_deploy_worker_missing_store_url_aborts(
 ) -> None:
     """Worker emits finished(False, ...) immediately when store URL is empty."""
     monkeypatch.setattr(cfg, "get_store_url", lambda: "")
-    monkeypatch.setattr(cfg, "get_store_token", lambda: "tok")
+    monkeypatch.setattr(cfg, "get_admin_credential", lambda: "tok")
     monkeypatch.setattr(cfg, "get_event_slug", lambda: "ev")
     monkeypatch.setattr(cfg, "get_output_root", lambda: str(tmp_path))
 
@@ -139,7 +139,7 @@ def test_deploy_worker_missing_slug_aborts(
 ) -> None:
     """Worker emits finished(False, ...) when event slug is empty."""
     monkeypatch.setattr(cfg, "get_store_url", lambda: "http://store")
-    monkeypatch.setattr(cfg, "get_store_token", lambda: "tok")
+    monkeypatch.setattr(cfg, "get_admin_credential", lambda: "tok")
     monkeypatch.setattr(cfg, "get_event_slug", lambda: "")
     monkeypatch.setattr(cfg, "get_output_root", lambda: str(tmp_path))
 

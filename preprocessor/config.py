@@ -52,11 +52,29 @@ def get_store_url() -> str:
 def set_store_url(v: str) -> None:
     _s().setValue("store/url", v)
 
+
+def get_admin_credential() -> str:
+    credential = str(_s().value("store/admin_credential", ""))
+    if credential:
+        return credential
+
+    legacy = str(_s().value("store/token", ""))
+    if legacy:
+        _s().setValue("store/admin_credential", legacy)
+        _s().remove("store/token")
+    return legacy
+
+
+def set_admin_credential(v: str) -> None:
+    _s().setValue("store/admin_credential", v)
+    _s().remove("store/token")
+
+
 def get_store_token() -> str:
-    return str(_s().value("store/token", ""))
+    return get_admin_credential()
 
 def set_store_token(v: str) -> None:
-    _s().setValue("store/token", v)
+    set_admin_credential(v)
 
 
 # ── SFTP ──────────────────────────────────────────────────────────────────────

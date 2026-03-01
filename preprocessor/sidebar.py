@@ -135,13 +135,13 @@ class Sidebar(QScrollArea):
         )
         form_api.addRow("URL", self.store_url_input)
 
-        self.store_token_input = QLineEdit(cfg.get_store_token())
-        self.store_token_input.setPlaceholderText("admin token")
+        self.store_token_input = QLineEdit(cfg.get_admin_credential())
+        self.store_token_input.setPlaceholderText("admin credential")
         self.store_token_input.setEchoMode(QLineEdit.EchoMode.Password)
         self.store_token_input.editingFinished.connect(
-            lambda: cfg.set_store_token(self.store_token_input.text().strip())
+            lambda: cfg.set_admin_credential(self.store_token_input.text().strip())
         )
-        form_api.addRow("Token", self.store_token_input)
+        form_api.addRow("Credential", self.store_token_input)
 
         root.addLayout(form_api)
 
@@ -188,7 +188,7 @@ class Sidebar(QScrollArea):
 
     def _on_test_connection(self) -> None:
         url = self.store_url_input.text().strip() or cfg.get_store_url()
-        token = self.store_token_input.text().strip() or cfg.get_store_token()
+        token = self.store_token_input.text().strip() or cfg.get_admin_credential()
         self._conn_test_btn.setEnabled(False)
         self._conn_status_label.setText("Connecting…")
         self._conn_status_label.setStyleSheet("")

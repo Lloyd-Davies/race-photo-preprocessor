@@ -118,12 +118,12 @@ class DeployWorker(QThread):
 
     def run(self) -> None:
         base_url = cfg.get_store_url()
-        token = cfg.get_store_token()
+        token = cfg.get_admin_credential()
         slug = cfg.get_event_slug()
         output_root = cfg.get_output_root()
 
         if not base_url or not token:
-            self.finished.emit(False, "Store URL and admin token are required — set them in the sidebar.")
+            self.finished.emit(False, "Store URL and admin credential are required — set them in the sidebar.")
             return
         if not slug:
             self.finished.emit(False, "Event slug is required — set it in the sidebar.")

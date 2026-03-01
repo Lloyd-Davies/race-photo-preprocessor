@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import httpx
 
@@ -18,11 +18,94 @@ def _base(url: str) -> str:
     return url.rstrip("/")
 
 
-def _headers(token: str) -> dict[str, str]:
-    return {
-        "Content-Type": "application/json",
-        "X-Admin-Token": token,
-    }
+@dataclass
+class _AuthContext:
+    mode: Literal["session", "legacy"]
+    credential: str
+    access_token: str | None = None
+    refresh_token: str | None = None
+
+
+def _auth_headers(ctx: _AuthContext, *, include_content_type: bool = True) -> dict[str, str]:
+    headers: dict[str, str] = {}
+    if include_content_type:
+        headers["Content-Type"] = "application/json"
+
+    if ctx.mode == "session" and ctx.access_token:
+        headers["Authorization"] = f"Bearer {ctx.access_token}"
+        return headers
+
+    headers["X-Admin-Token"] = ctx.credential
+    return headers
+
+
+def _refresh_session(client: httpx.Client, base_url: str, ctx: _AuthContext) -> bool:
+    if ctx.mode != "session" or not ctx.refresh_token:
+        return False
+
+    resp = client.post(
+        f"{_base(base_url)}/api/admin/refresh",
+        json={"refresh_token": ctx.refresh_token},
+        headers={"Content-Type": "application/json"},
+    )
+    if resp.status_code >= 400:
+        return False
+
+    data = resp.json() if resp.content else {}
+    ctx.access_token = str(data.get("access_token", "") or "")
+    ctx.refresh_token = str(data.get("refresh_token", "") or "")
+    return bool(ctx.access_token)
+
+
+def _authenticate(client: httpx.Client, base_url: str, credential: str) -> _AuthContext:
+    # New auth flow: login -> bearer session tokens.
+    login = client.post(
+        f"{_base(base_url)}/api/admin/login",
+        json={"admin_token": credential},
+        headers={"Content-Type": "application/json"},
+    )
+
+    # Backward-compat fallback for older server deployments.
+    if login.status_code == 404:
+        return _AuthContext(mode="legacy", credential=credential)
+
+    login.raise_for_status()
+    body = login.json() if login.content else {}
+    access_token = str(body.get("access_token", "") or "")
+    refresh_token = str(body.get("refresh_token", "") or "")
+    if not access_token:
+        raise RuntimeError("Admin login succeeded but did not return an access token.")
+
+    return _AuthContext(
+        mode="session",
+        credential=credential,
+        access_token=access_token,
+        refresh_token=refresh_token,
+    )
+
+
+def _request_authed(
+    client: httpx.Client,
+    base_url: str,
+    ctx: _AuthContext,
+    method: str,
+    path: str,
+    *,
+    include_content_type: bool = True,
+    **kwargs: Any,
+) -> httpx.Response:
+    url = f"{_base(base_url)}{path}"
+    headers = dict(kwargs.pop("headers", {}) or {})
+    headers.update(_auth_headers(ctx, include_content_type=include_content_type))
+
+    resp = client.request(method, url, headers=headers, **kwargs)
+    if resp.status_code == 401 and ctx.mode == "session" and _refresh_session(client, base_url, ctx):
+        headers = dict(kwargs.pop("headers", {}) or {})
+        headers.update(_auth_headers(ctx, include_content_type=include_content_type))
+        resp = client.request(method, url, headers=headers, **kwargs)
+
+    resp.raise_for_status()
+    return resp
 
 
 def _user_error(exc: Exception) -> str:
@@ -30,7 +113,7 @@ def _user_error(exc: Exception) -> str:
     if isinstance(exc, httpx.HTTPStatusError):
         code = exc.response.status_code
         if code == 401:
-            return "Unauthorised — check your admin token."
+            return "Unauthorised — check your admin credential."
         if code == 403:
             return "Forbidden — token does not have admin access."
         if code == 404:
@@ -53,15 +136,21 @@ class ConnectionResult:
 
 
 def test_connection(base_url: str, token: str) -> ConnectionResult:
-    """Hit GET /api/admin/stats to verify URL + token in one call."""
+    """Verify URL + admin credential using session login flow when available."""
     if not base_url or not token:
-        return ConnectionResult(ok=False, message="Store URL and admin token are required.")
-    url = f"{_base(base_url)}/api/admin/stats"
+        return ConnectionResult(ok=False, message="Store URL and admin credential are required.")
+
     try:
         with httpx.Client(timeout=10.0) as client:
-            resp = client.get(url, headers=_headers(token))
-            resp.raise_for_status()
-            stats = resp.json()
+            ctx = _authenticate(client, base_url, token)
+            if ctx.mode == "session":
+                resp = _request_authed(client, base_url, ctx, "GET", "/api/admin/session")
+                stats = {"ok": resp.status_code == 200}
+                return ConnectionResult(ok=True, message="Connected — admin session ready.", stats=stats)
+
+            # Legacy fallback
+            resp = _request_authed(client, base_url, ctx, "GET", "/api/admin/stats")
+            stats = resp.json() if resp.content else {}
         events = stats.get("total_events", "?")
         photos = stats.get("total_photos", "?")
         return ConnectionResult(
@@ -78,7 +167,7 @@ def test_connection(base_url: str, token: str) -> ConnectionResult:
 def list_events(base_url: str, token: str) -> list[dict[str, Any]]:
     url = f"{_base(base_url)}/api/events"
     with httpx.Client(timeout=20.0) as client:
-        resp = client.get(url, headers=_headers(token))
+        resp = client.get(url)
         resp.raise_for_status()
         data = resp.json()
     return data if isinstance(data, list) else []
@@ -86,10 +175,9 @@ def list_events(base_url: str, token: str) -> list[dict[str, Any]]:
 
 def list_admin_events(base_url: str, token: str) -> list[dict[str, Any]]:
     """Return all events (any status) via the admin endpoint."""
-    url = f"{_base(base_url)}/api/admin/events"
     with httpx.Client(timeout=20.0) as client:
-        resp = client.get(url, headers=_headers(token))
-        resp.raise_for_status()
+        ctx = _authenticate(client, base_url, token)
+        resp = _request_authed(client, base_url, ctx, "GET", "/api/admin/events")
         data = resp.json()
     return data if isinstance(data, list) else []
 
@@ -115,11 +203,10 @@ def find_event_id_by_slug(base_url: str, token: str, slug: str) -> int | None:
 
 def get_uploaded_photo_ids(base_url: str, token: str, event_id: int) -> set[str]:
     """Return the set of photo_id stems already on the store for *event_id*."""
-    url = f"{_base(base_url)}/api/admin/events/{event_id}/photo_ids"
     try:
         with httpx.Client(timeout=20.0) as client:
-            resp = client.get(url, headers=_headers(token))
-            resp.raise_for_status()
+            ctx = _authenticate(client, base_url, token)
+            resp = _request_authed(client, base_url, ctx, "GET", f"/api/admin/events/{event_id}/photo_ids")
             data = resp.json()
         return set(data.get("photo_ids", []))
     except Exception:
@@ -133,11 +220,17 @@ def upload_bib_tags(
     tags: list[dict[str, Any]],
     replace: bool = False,
 ) -> dict[str, Any]:
-    url = f"{_base(base_url)}/api/admin/events/{event_id}/tags/bibs"
     payload = {"tags": tags, "replace": replace}
     with httpx.Client(timeout=60.0) as client:
-        resp = client.post(url, headers=_headers(token), json=payload)
-        resp.raise_for_status()
+        ctx = _authenticate(client, base_url, token)
+        resp = _request_authed(
+            client,
+            base_url,
+            ctx,
+            "POST",
+            f"/api/admin/events/{event_id}/tags/bibs",
+            json=payload,
+        )
         data = resp.json()
     return data if isinstance(data, dict) else {"added": 0}
 
@@ -157,17 +250,19 @@ def upload_photo(
     Uses multipart/form-data. Content-Type is NOT set in auth headers so
     httpx can inject the correct multipart boundary automatically.
     """
-    url = f"{_base(base_url)}/api/admin/events/{event_id}/photos"
-    auth_header = {"X-Admin-Token": token}
     with file_path.open("rb") as fh:
         resp_data: dict[str, Any] = {}
         with httpx.Client(timeout=120.0) as client:
-            resp = client.post(
-                url,
-                headers=auth_header,
+            ctx = _authenticate(client, base_url, token)
+            resp = _request_authed(
+                client,
+                base_url,
+                ctx,
+                "POST",
+                f"/api/admin/events/{event_id}/photos",
+                include_content_type=False,
                 data={"photo_id": photo_id, "kind": kind},
                 files={"file": (file_path.name, fh, "image/jpeg")},
             )
-            resp.raise_for_status()
             resp_data = resp.json()
     return resp_data if isinstance(resp_data, dict) else {}

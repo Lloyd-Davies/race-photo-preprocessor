@@ -16,6 +16,10 @@ def _make_config(tmp_path: Path, slug: str = "test-event") -> ProcessConfig:
     return ProcessConfig(event_slug=slug, output_root=tmp_path)
 
 
+def _wait_thread_stopped(worker: ProcessWorker) -> None:
+    assert worker.wait(5_000), "worker thread did not stop in time"
+
+
 # ── Tests ─────────────────────────────────────────────────────────────────────
 
 
@@ -32,6 +36,8 @@ def test_finished_fires_with_all_results(
 
     with qtbot.waitSignal(worker.finished, timeout=10_000) as blocker:
         worker.start()
+
+    _wait_thread_stopped(worker)
 
     results = blocker.args[0]
     assert len(results) == 3
@@ -55,6 +61,8 @@ def test_file_done_fires_for_each_file(
     with qtbot.waitSignal(worker.finished, timeout=10_000):
         worker.start()
 
+    _wait_thread_stopped(worker)
+
     assert len(file_done_calls) == 3
 
 
@@ -74,6 +82,8 @@ def test_progress_emits_correct_indices(
     with qtbot.waitSignal(worker.finished, timeout=10_000):
         worker.start()
 
+    _wait_thread_stopped(worker)
+
     assert len(progress_calls) == 3
     for idx, (cur, tot, path) in enumerate(progress_calls, start=1):
         assert cur == idx
@@ -91,6 +101,8 @@ def test_error_result_for_missing_file(
 
     with qtbot.waitSignal(worker.finished, timeout=10_000) as blocker:
         worker.start()
+
+    _wait_thread_stopped(worker)
 
     results = blocker.args[0]
     assert len(results) == 1
@@ -115,6 +127,8 @@ def test_stop_halts_processing(
     with qtbot.waitSignal(worker.finished, timeout=10_000) as blocker:
         worker.start()
 
+    _wait_thread_stopped(worker)
+
     results = blocker.args[0]
     # At least 1 result (the file that triggered stop), but fewer than 3
     assert 1 <= len(results) < 3
@@ -133,11 +147,14 @@ def test_skip_existing(
     worker1 = ProcessWorker(paths, config)
     with qtbot.waitSignal(worker1.finished, timeout=10_000):
         worker1.start()
+    _wait_thread_stopped(worker1)
 
     # Second run — all should be skipped
     worker2 = ProcessWorker(paths, config)
     with qtbot.waitSignal(worker2.finished, timeout=10_000) as blocker:
         worker2.start()
+
+    _wait_thread_stopped(worker2)
 
     results = blocker.args[0]
     assert all(r.skipped for r in results)

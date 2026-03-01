@@ -34,6 +34,10 @@ def _patch_cfg(monkeypatch, tmp_path: Path, slug: str = "test-event") -> None:
     monkeypatch.setattr(cfg, "get_output_root", lambda: str(tmp_path))
 
 
+def _wait_thread_stopped(worker: DeployWorker) -> None:
+    assert worker.wait(5_000), "worker thread did not stop in time"
+
+
 # ── Tests ─────────────────────────────────────────────────────────────────────
 
 
@@ -62,6 +66,8 @@ def test_proofs_uploaded_before_originals(
 
     with qtbot.waitSignal(worker.finished, timeout=15_000) as blocker:
         worker.start()
+
+    _wait_thread_stopped(worker)
 
     success, _ = blocker.args
     assert success, "Worker should finish successfully"
@@ -102,6 +108,8 @@ def test_already_uploaded_photos_skipped(
     with qtbot.waitSignal(worker.finished, timeout=15_000) as blocker:
         worker.start()
 
+    _wait_thread_stopped(worker)
+
     success, _ = blocker.args
     assert success
 
@@ -127,6 +135,8 @@ def test_deploy_worker_missing_store_url_aborts(
     with qtbot.waitSignal(worker.finished, timeout=5_000) as blocker:
         worker.start()
 
+    _wait_thread_stopped(worker)
+
     success, message = blocker.args
     assert not success
     assert "URL" in message or "required" in message.lower()
@@ -148,6 +158,8 @@ def test_deploy_worker_missing_slug_aborts(
     with qtbot.waitSignal(worker.finished, timeout=5_000) as blocker:
         worker.start()
 
+    _wait_thread_stopped(worker)
+
     success, message = blocker.args
     assert not success
     assert "slug" in message.lower()
@@ -166,6 +178,8 @@ def test_deploy_worker_event_not_found_aborts(
 
     with qtbot.waitSignal(worker.finished, timeout=5_000) as blocker:
         worker.start()
+
+    _wait_thread_stopped(worker)
 
     success, message = blocker.args
     assert not success
@@ -187,6 +201,8 @@ def test_deploy_worker_nothing_to_upload_aborts(
 
     with qtbot.waitSignal(worker.finished, timeout=5_000) as blocker:
         worker.start()
+
+    _wait_thread_stopped(worker)
 
     success, message = blocker.args
     assert not success

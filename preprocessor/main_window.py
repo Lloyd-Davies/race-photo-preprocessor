@@ -1,6 +1,8 @@
 """Main application window."""
 from __future__ import annotations
 
+from pathlib import Path
+
 from PySide6.QtCore import Qt, QSettings
 from PySide6.QtWidgets import (
     QApplication,
@@ -266,6 +268,25 @@ class MainWindow(QMainWindow):
         self._workflow_state.current_step = WorkflowStep.IMPORT
         self._sync_workflow_ui()
 
+    def resume_existing_output(self) -> bool:
+        paths = self._event_output_paths()
+        has_proofs = paths["proofs"].exists() and any(paths["proofs"].rglob("*.jpg"))
+        has_originals = paths["originals"].exists() and any(paths["originals"].rglob("*.jpg"))
+        has_bibs = paths["bibs_csv"].exists() or paths["bibs_json"].exists()
+        if not (has_proofs or has_originals or has_bibs):
+            self.set_status("No prior output found for this event.")
+            return False
+
+        self.set_workflow_step_complete(WorkflowStep.SESSION)
+        self.set_workflow_step_complete(WorkflowStep.IMPORT)
+        self.set_workflow_step_complete(WorkflowStep.PREPARE)
+        self.set_workflow_step_complete(WorkflowStep.PROCESS)
+        self.set_workflow_step_complete(WorkflowStep.REVIEW)
+        self._workflow_state.current_step = WorkflowStep.DEPLOY
+        self.set_status("Loaded prior output. Ready to deploy proofs and bib scans.")
+        self._sync_workflow_ui()
+        return True
+
     def complete_import(self) -> None:
         selected = self.import_tab.selected_paths()
         if not selected:
@@ -276,6 +297,20 @@ class MainWindow(QMainWindow):
         self.set_workflow_step_complete(WorkflowStep.IMPORT)
         self._workflow_state.current_step = WorkflowStep.PREPARE
         self._sync_workflow_ui()
+
+    def _event_output_paths(self) -> dict[str, Path]:
+        slug = self.get_event_slug()
+        output_root = Path(self.sidebar.output_input.text().strip())
+        proofs = output_root / "proofs" / slug
+        originals = output_root / "originals" / slug
+        bibs_csv = output_root / "bibs" / slug / "bib_tags.csv"
+        bibs_json = output_root / "bibs" / slug / "bib_tags.json"
+        return {
+            "proofs": proofs,
+            "originals": originals,
+            "bibs_csv": bibs_csv,
+            "bibs_json": bibs_json,
+        }
 
     def complete_prepare(self) -> None:
         self.set_workflow_step_complete(WorkflowStep.PREPARE)

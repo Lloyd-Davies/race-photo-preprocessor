@@ -45,6 +45,11 @@ class SessionStep(QWidget):
         self.create_session_button.clicked.connect(self._on_create_session)
         root.addWidget(self.create_session_button, alignment=Qt.AlignmentFlag.AlignLeft)
 
+        self.resume_existing_button = QPushButton("Resume Existing Output")
+        self.resume_existing_button.setProperty("secondary", True)
+        self.resume_existing_button.clicked.connect(self._on_resume_existing)
+        root.addWidget(self.resume_existing_button, alignment=Qt.AlignmentFlag.AlignLeft)
+
         root.addStretch()
 
     def _validate(self) -> list[str]:
@@ -90,3 +95,20 @@ class SessionStep(QWidget):
         self.validation_label.setStyleSheet("color: #4caf50;")
         self.validation_label.setText("Session is valid. Proceeding to Import.")
         self._window.complete_session()
+
+    def _on_resume_existing(self) -> None:
+        problems = self._validate()
+        if problems:
+            self.validation_label.setStyleSheet("color: #f44336;")
+            self.validation_label.setText("\n".join(f"• {msg}" for msg in problems))
+            self._window.set_status("Session validation failed.")
+            return
+
+        if self._window.resume_existing_output():
+            self.validation_label.setStyleSheet("color: #4caf50;")
+            self.validation_label.setText("Existing output detected. Proceeding to Deploy.")
+        else:
+            self.validation_label.setStyleSheet("color: #f59e0b;")
+            self.validation_label.setText(
+                "No existing output found for this event yet. Use Create Session and process images first."
+            )

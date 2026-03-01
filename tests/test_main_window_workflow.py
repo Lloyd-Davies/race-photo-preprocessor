@@ -96,6 +96,50 @@ def test_session_create_shows_validation_errors_when_missing_fields(qtbot: QtBot
     assert "required" in window.session_step.validation_label.text().lower()
 
 
+def test_session_resume_existing_output_moves_to_deploy(qtbot: QtBot, tmp_path: Path) -> None:
+    window = MainWindow(dark_mode=True)
+    qtbot.addWidget(window)
+
+    slug = "my-race"
+    proofs_dir = tmp_path / "proofs" / slug
+    proofs_dir.mkdir(parents=True)
+    (proofs_dir / "0001.jpg").write_bytes(b"jpg")
+
+    window.sidebar.slug_input.setText(slug)
+    window.sidebar.name_input.setText("My Race")
+    window.sidebar.output_input.setText(str(tmp_path))
+    window.sidebar.store_url_input.setText("https://photos.example.com")
+    window.sidebar.store_token_input.setText("credential")
+
+    window.session_step.resume_existing_button.click()
+
+    assert window.workflow_state.current_step == WorkflowStep.DEPLOY
+    assert window.workflow_state.step_status[WorkflowStep.SESSION] == "complete"
+    assert window.workflow_state.step_status[WorkflowStep.IMPORT] == "complete"
+    assert window.workflow_state.step_status[WorkflowStep.PROCESS] == "complete"
+    assert window.workflow_state.step_status[WorkflowStep.REVIEW] == "complete"
+    assert window.tabs.currentWidget() is window.deploy_tab
+
+
+def test_session_resume_existing_output_shows_warning_when_missing(
+    qtbot: QtBot,
+    tmp_path: Path,
+) -> None:
+    window = MainWindow(dark_mode=True)
+    qtbot.addWidget(window)
+
+    window.sidebar.slug_input.setText("my-race")
+    window.sidebar.name_input.setText("My Race")
+    window.sidebar.output_input.setText(str(tmp_path))
+    window.sidebar.store_url_input.setText("https://photos.example.com")
+    window.sidebar.store_token_input.setText("credential")
+
+    window.session_step.resume_existing_button.click()
+
+    assert window.workflow_state.current_step == WorkflowStep.SESSION
+    assert "no existing output" in window.session_step.validation_label.text().lower()
+
+
 def test_import_primary_action_blocked_without_selection(qtbot: QtBot, tmp_path: Path) -> None:
     window = MainWindow(dark_mode=True)
     qtbot.addWidget(window)

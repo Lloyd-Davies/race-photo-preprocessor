@@ -8,6 +8,7 @@ import preprocessor.config as cfg
 from preprocessor.workers.deploy_worker import DeployWorker
 
 from PySide6.QtCore import Qt
+from PySide6.QtCore import Signal
 from PySide6.QtWidgets import (
     QCheckBox,
     QFormLayout,
@@ -29,6 +30,8 @@ if TYPE_CHECKING:
 
 
 class DeployTab(QWidget):
+    deploy_finished: Signal = Signal(bool)
+
     def __init__(self, parent: "MainWindow") -> None:
         super().__init__(parent)
         self._window = parent
@@ -198,6 +201,9 @@ class DeployTab(QWidget):
 
     # ── Upload ────────────────────────────────────────────────────────────────
 
+    def start_upload(self) -> None:
+        self._on_upload()
+
     def _on_upload(self) -> None:
         if not self._cb_originals.isChecked() and not self._cb_proofs.isChecked() and not self._cb_bibs.isChecked():
             self._append_log("Nothing selected — tick at least one option.")
@@ -240,6 +246,7 @@ class DeployTab(QWidget):
         self._progress.setValue(self._progress.maximum())
         prefix = "✔" if ok else "✖"
         self._append_log(f"\n{prefix} {message}")
+        self.deploy_finished.emit(ok)
 
     def _append_log(self, text: str) -> None:
         self._log.appendPlainText(text)

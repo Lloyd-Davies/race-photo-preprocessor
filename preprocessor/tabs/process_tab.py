@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from PySide6.QtCore import Qt
+from PySide6.QtCore import Signal
 from PySide6.QtGui import QColor, QPixmap
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -46,6 +47,8 @@ _STATUS_ICONS = {
 
 
 class ProcessTab(QWidget):
+    run_finished: Signal = Signal(bool)  # success_without_errors
+
     def __init__(self, parent: "MainWindow") -> None:
         super().__init__(parent)
         self._window = parent
@@ -311,6 +314,9 @@ class ProcessTab(QWidget):
 
     # ── Slots ─────────────────────────────────────────────────────────────────
 
+    def start_processing(self) -> None:
+        self._start()
+
     def _start(self) -> None:
         paths = self._window.get_selected_images()
         if not paths:
@@ -477,6 +483,7 @@ class ProcessTab(QWidget):
         self._window.set_status(
             f"Processing complete: {ok} ok, {skipped} skipped, {errors} errors"
         )
+        self.run_finished.emit(errors == 0 and not self._stop_requested)
 
         if self._worker:
             self._worker.deleteLater()

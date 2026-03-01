@@ -143,6 +143,8 @@ class MainWindow(QMainWindow):
         self.tabs.addTab(self.deploy_tab, "  Deploy  ")
 
         self.import_tab.selection_changed.connect(lambda *_: self._sync_workflow_ui())
+        self.process_tab.run_finished.connect(self._on_process_finished)
+        self.deploy_tab.deploy_finished.connect(self._on_deploy_finished)
 
         self._sync_workflow_ui()
 
@@ -236,6 +238,22 @@ class MainWindow(QMainWindow):
         step = self._workflow_state.current_step
         if step == WorkflowStep.IMPORT:
             self.complete_import()
+            return
+
+        if step == WorkflowStep.PREPARE:
+            self.complete_prepare()
+            return
+
+        if step == WorkflowStep.PROCESS:
+            self.start_process_step()
+            return
+
+        if step == WorkflowStep.REVIEW:
+            self.complete_review()
+            return
+
+        if step == WorkflowStep.DEPLOY:
+            self.start_deploy_step()
 
     def set_workflow_step_complete(self, step: WorkflowStep) -> None:
         from preprocessor.workflow_state import mark_step_complete
@@ -257,6 +275,41 @@ class MainWindow(QMainWindow):
 
         self.set_workflow_step_complete(WorkflowStep.IMPORT)
         self._workflow_state.current_step = WorkflowStep.PREPARE
+        self._sync_workflow_ui()
+
+    def complete_prepare(self) -> None:
+        self.set_workflow_step_complete(WorkflowStep.PREPARE)
+        self._workflow_state.current_step = WorkflowStep.PROCESS
+        self._sync_workflow_ui()
+
+    def start_process_step(self) -> None:
+        self.set_workflow_step_status(WorkflowStep.PROCESS, "running")
+        self.process_tab.start_processing()
+
+    def _on_process_finished(self, success: bool) -> None:
+        self.set_workflow_step_status(
+            WorkflowStep.PROCESS,
+            "complete" if success else "needs_attention",
+        )
+        if success:
+            self.set_workflow_step_status(WorkflowStep.REVIEW, "ready")
+            self._workflow_state.current_step = WorkflowStep.REVIEW
+        self._sync_workflow_ui()
+
+    def complete_review(self) -> None:
+        self.set_workflow_step_complete(WorkflowStep.REVIEW)
+        self._workflow_state.current_step = WorkflowStep.DEPLOY
+        self._sync_workflow_ui()
+
+    def start_deploy_step(self) -> None:
+        self.set_workflow_step_status(WorkflowStep.DEPLOY, "running")
+        self.deploy_tab.start_upload()
+
+    def _on_deploy_finished(self, success: bool) -> None:
+        self.set_workflow_step_status(
+            WorkflowStep.DEPLOY,
+            "complete" if success else "needs_attention",
+        )
         self._sync_workflow_ui()
 
     def set_workflow_step_status(self, step: WorkflowStep, status: str) -> None:

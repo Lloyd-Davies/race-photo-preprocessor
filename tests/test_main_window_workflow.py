@@ -133,3 +133,63 @@ def test_import_primary_action_completes_with_selection(
 
     assert window.workflow_state.step_status[WorkflowStep.IMPORT] == "complete"
     assert window.workflow_state.current_step == WorkflowStep.PREPARE
+
+
+def test_prepare_primary_action_moves_to_process(qtbot: QtBot, tmp_path: Path, photo_folder: Path) -> None:
+    window = MainWindow(dark_mode=True)
+    qtbot.addWidget(window)
+
+    window.sidebar.slug_input.setText("my-race")
+    window.sidebar.name_input.setText("My Race")
+    window.sidebar.output_input.setText(str(tmp_path))
+    window.sidebar.store_url_input.setText("https://photos.example.com")
+    window.sidebar.store_token_input.setText("credential")
+    window.session_step.create_session_button.click()
+    window.import_tab._load_folder(str(photo_folder))
+    window.workflow_primary_button.click()  # Complete Import
+
+    assert window.workflow_state.current_step == WorkflowStep.PREPARE
+    window.workflow_primary_button.click()  # Save & Continue
+
+    assert window.workflow_state.step_status[WorkflowStep.PREPARE] == "complete"
+    assert window.workflow_state.current_step == WorkflowStep.PROCESS
+
+
+def test_process_success_moves_to_review(qtbot: QtBot) -> None:
+    window = MainWindow(dark_mode=True)
+    qtbot.addWidget(window)
+
+    window.workflow_state.current_step = WorkflowStep.PROCESS
+    window._sync_workflow_ui()
+
+    window._on_process_finished(True)
+
+    assert window.workflow_state.step_status[WorkflowStep.PROCESS] == "complete"
+    assert window.workflow_state.current_step == WorkflowStep.REVIEW
+
+
+def test_review_primary_action_moves_to_deploy(qtbot: QtBot) -> None:
+    window = MainWindow(dark_mode=True)
+    qtbot.addWidget(window)
+
+    window.workflow_state.current_step = WorkflowStep.REVIEW
+    window.workflow_state.step_status[WorkflowStep.REVIEW] = "ready"
+    window._sync_workflow_ui()
+
+    window.workflow_primary_button.click()
+
+    assert window.workflow_state.step_status[WorkflowStep.REVIEW] == "complete"
+    assert window.workflow_state.current_step == WorkflowStep.DEPLOY
+
+
+def test_deploy_finished_marks_complete(qtbot: QtBot) -> None:
+    window = MainWindow(dark_mode=True)
+    qtbot.addWidget(window)
+
+    window.workflow_state.current_step = WorkflowStep.DEPLOY
+    window.workflow_state.step_status[WorkflowStep.DEPLOY] = "running"
+    window._sync_workflow_ui()
+
+    window._on_deploy_finished(True)
+
+    assert window.workflow_state.step_status[WorkflowStep.DEPLOY] == "complete"

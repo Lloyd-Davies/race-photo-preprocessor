@@ -85,6 +85,33 @@ class MainWindow(QMainWindow):
         main_layout.addWidget(self.tabs, 1)
         splitter.addWidget(main_area)
 
+        # Right insights panel
+        insights = QWidget()
+        insights.setMinimumWidth(220)
+        insights.setMaximumWidth(320)
+        insights_layout = QVBoxLayout(insights)
+        insights_layout.setContentsMargins(12, 12, 12, 12)
+        insights_layout.setSpacing(8)
+
+        health_title = QLabel("Run Health")
+        health_title.setProperty("heading", True)
+        insights_layout.addWidget(health_title)
+
+        self.run_health_label = QLabel("")
+        self.run_health_label.setWordWrap(True)
+        insights_layout.addWidget(self.run_health_label)
+
+        attention_title = QLabel("Attention")
+        attention_title.setProperty("heading", True)
+        insights_layout.addWidget(attention_title)
+
+        self.attention_count_label = QLabel("")
+        self.attention_count_label.setWordWrap(True)
+        insights_layout.addWidget(self.attention_count_label)
+
+        insights_layout.addStretch()
+        splitter.addWidget(insights)
+
         splitter.setStretchFactor(0, 0)
         splitter.setStretchFactor(1, 1)
         splitter.setSizes([240, 1040])
@@ -127,10 +154,19 @@ class MainWindow(QMainWindow):
         return f"{step.value.title()} · {label}"
 
     def _sync_workflow_ui(self) -> None:
+        attention_count = 0
         for step in STEP_ORDER:
             button = self._step_buttons[step]
             button.setText(self._status_label(step))
             button.setEnabled(can_navigate_to(self._workflow_state, step) or step == self._workflow_state.current_step)
+            if self._workflow_state.step_status[step] == "needs_attention":
+                attention_count += 1
+
+        current_status = self._workflow_state.step_status[self._workflow_state.current_step]
+        self.run_health_label.setText(
+            f"Current: {self._workflow_state.current_step.value} ({str(current_status).replace('_', ' ')})"
+        )
+        self.attention_count_label.setText(f"Needs attention: {attention_count}")
 
         active = self._step_to_tab_index(self._workflow_state.current_step)
         if active is not None:

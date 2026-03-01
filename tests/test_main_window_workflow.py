@@ -43,3 +43,12 @@ def test_main_window_blocks_forward_navigation_until_current_complete(qtbot: QtB
     window.workflow_step_buttons[WorkflowStep.IMPORT].click()
 
     assert window.workflow_state.current_step == WorkflowStep.IMPORT
+
+
+def test_main_window_exposes_run_insights_panel(qtbot: QtBot) -> None:
+    window = MainWindow(dark_mode=True)
+    qtbot.addWidget(window)
+
+    assert window.run_health_label.text()
+    assert "session" in window.run_health_label.text().lower()
+    assert "0" in window.attention_count_label.text()

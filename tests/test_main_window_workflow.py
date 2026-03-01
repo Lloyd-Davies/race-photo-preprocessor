@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 from pytestqt.plugin import QtBot  # type: ignore[import]
 
 from preprocessor.main_window import MainWindow
@@ -92,3 +94,42 @@ def test_session_create_shows_validation_errors_when_missing_fields(qtbot: QtBot
 
     assert window.workflow_state.step_status[WorkflowStep.SESSION] != "complete"
     assert "required" in window.session_step.validation_label.text().lower()
+
+
+def test_import_primary_action_blocked_without_selection(qtbot: QtBot, tmp_path: Path) -> None:
+    window = MainWindow(dark_mode=True)
+    qtbot.addWidget(window)
+
+    window.sidebar.slug_input.setText("my-race")
+    window.sidebar.name_input.setText("My Race")
+    window.sidebar.output_input.setText(str(tmp_path))
+    window.sidebar.store_url_input.setText("https://photos.example.com")
+    window.sidebar.store_token_input.setText("credential")
+    window.session_step.create_session_button.click()
+
+    assert window.workflow_state.current_step == WorkflowStep.IMPORT
+    assert window.workflow_primary_button.isEnabled() is False
+
+
+def test_import_primary_action_completes_with_selection(
+    qtbot: QtBot,
+    tmp_path: Path,
+    photo_folder: Path,
+) -> None:
+    window = MainWindow(dark_mode=True)
+    qtbot.addWidget(window)
+
+    window.sidebar.slug_input.setText("my-race")
+    window.sidebar.name_input.setText("My Race")
+    window.sidebar.output_input.setText(str(tmp_path))
+    window.sidebar.store_url_input.setText("https://photos.example.com")
+    window.sidebar.store_token_input.setText("credential")
+    window.session_step.create_session_button.click()
+
+    window.import_tab._load_folder(str(photo_folder))
+
+    assert window.workflow_primary_button.isEnabled() is True
+    window.workflow_primary_button.click()
+
+    assert window.workflow_state.step_status[WorkflowStep.IMPORT] == "complete"
+    assert window.workflow_state.current_step == WorkflowStep.PREPARE

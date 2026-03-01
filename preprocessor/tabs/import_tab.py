@@ -103,6 +103,8 @@ class _ImageItem(QListWidgetItem):
 # ── Import tab ────────────────────────────────────────────────────────────────
 
 class ImportTab(QWidget):
+    selection_changed: Signal = Signal(int, int)  # selected_count, total_count
+
     def __init__(self, parent: "MainWindow") -> None:
         super().__init__(parent)
         self._main = parent
@@ -294,6 +296,7 @@ class ImportTab(QWidget):
         total = len(self._items)
         self._count_label.setText(f"{selected} of {total} images selected")
         self._total_label.setText(f"{total} total")
+        self.selection_changed.emit(selected, total)
 
     # ── Public API ────────────────────────────────────────────────────────────
 

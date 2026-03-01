@@ -83,8 +83,19 @@ class MainWindow(QMainWindow):
         self.tabs.setDocumentMode(True)
         self.tabs.tabBar().hide()
 
+        self._workflow_action_bar = QWidget()
+        action_layout = QHBoxLayout(self._workflow_action_bar)
+        action_layout.setContentsMargins(10, 0, 10, 10)
+        action_layout.setSpacing(8)
+        action_layout.addStretch()
+
+        self.workflow_primary_button = QPushButton("")
+        self.workflow_primary_button.clicked.connect(self._on_primary_action)
+        action_layout.addWidget(self.workflow_primary_button)
+
         main_layout.addWidget(self._step_indicator)
         main_layout.addWidget(self.tabs, 1)
+        main_layout.addWidget(self._workflow_action_bar)
         splitter.addWidget(main_area)
 
         # Right insights panel
@@ -131,6 +142,8 @@ class MainWindow(QMainWindow):
         self.tabs.addTab(self.bibs_tab, "  Bibs  ")
         self.tabs.addTab(self.deploy_tab, "  Deploy  ")
 
+        self.import_tab.selection_changed.connect(lambda *_: self._sync_workflow_ui())
+
         self._sync_workflow_ui()
 
         # ── Status bar ────────────────────────────────────────────────────────
@@ -173,6 +186,8 @@ class MainWindow(QMainWindow):
         )
         self.attention_count_label.setText(f"Needs attention: {attention_count}")
 
+        self._sync_primary_action()
+
         active = self._step_to_tab_index(self._workflow_state.current_step)
         if active is not None:
             self.tabs.setCurrentIndex(active)
@@ -185,6 +200,43 @@ class MainWindow(QMainWindow):
         self._workflow_state.current_step = step
         self._sync_workflow_ui()
 
+    def _sync_primary_action(self) -> None:
+        step = self._workflow_state.current_step
+        if step == WorkflowStep.SESSION:
+            self.workflow_primary_button.hide()
+            return
+
+        self.workflow_primary_button.show()
+
+        if step == WorkflowStep.IMPORT:
+            selected = len(self.import_tab.selected_paths())
+            self.workflow_primary_button.setText("Complete Import")
+            self.workflow_primary_button.setEnabled(selected > 0)
+            return
+
+        if step == WorkflowStep.PREPARE:
+            self.workflow_primary_button.setText("Save & Continue")
+            self.workflow_primary_button.setEnabled(True)
+            return
+
+        if step == WorkflowStep.PROCESS:
+            self.workflow_primary_button.setText("Start Processing")
+            self.workflow_primary_button.setEnabled(True)
+            return
+
+        if step == WorkflowStep.REVIEW:
+            self.workflow_primary_button.setText("Approve & Continue")
+            self.workflow_primary_button.setEnabled(True)
+            return
+
+        self.workflow_primary_button.setText("Deploy")
+        self.workflow_primary_button.setEnabled(True)
+
+    def _on_primary_action(self) -> None:
+        step = self._workflow_state.current_step
+        if step == WorkflowStep.IMPORT:
+            self.complete_import()
+
     def set_workflow_step_complete(self, step: WorkflowStep) -> None:
         from preprocessor.workflow_state import mark_step_complete
 
@@ -194,6 +246,17 @@ class MainWindow(QMainWindow):
     def complete_session(self) -> None:
         self.set_workflow_step_complete(WorkflowStep.SESSION)
         self._workflow_state.current_step = WorkflowStep.IMPORT
+        self._sync_workflow_ui()
+
+    def complete_import(self) -> None:
+        selected = self.import_tab.selected_paths()
+        if not selected:
+            self.set_status("Select at least one image before completing Import.")
+            self._sync_workflow_ui()
+            return
+
+        self.set_workflow_step_complete(WorkflowStep.IMPORT)
+        self._workflow_state.current_step = WorkflowStep.PREPARE
         self._sync_workflow_ui()
 
     def set_workflow_step_status(self, step: WorkflowStep, status: str) -> None:

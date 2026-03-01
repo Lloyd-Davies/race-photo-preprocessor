@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import httpx
+from pathlib import Path
 
 from preprocessor.store_api import (
+    _clear_thread_auth_cache_for_tests,
     find_event_id_by_slug,
     get_uploaded_photo_ids,
     list_admin_events,
     list_events,
+    upload_photo,
     upload_bib_tags,
 )
 
@@ -311,3 +314,62 @@ def test_test_connection_falls_back_to_legacy_stats() -> None:
         httpx.Client = original  # type: ignore[assignment]
 
     assert result.ok is True
+
+
+def test_upload_photo_retries_on_429(tmp_path: Path) -> None:
+    _clear_thread_auth_cache_for_tests()
+    calls = {"login": 0, "upload": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/api/admin/login":
+            calls["login"] += 1
+            return httpx.Response(200, json={"access_token": "acc", "refresh_token": "ref"})
+
+        if request.url.path == "/api/admin/events/1/photos":
+            calls["upload"] += 1
+            if calls["upload"] < 3:
+                return httpx.Response(429, headers={"Retry-After": "0"}, text="rate")
+            return httpx.Response(200, json={"photo_id": "img001", "kind": "proof"})
+
+        return httpx.Response(500, text="unexpected")
+
+    original = httpx.Client
+    httpx.Client = _mock_client(handler)  # type: ignore[assignment]
+    try:
+        f = tmp_path / "img001.jpg"
+        f.write_bytes(b"\xff\xd8\xff\xe0test")
+        out = upload_photo("http://local", "secret", 1, "img001", "proof", f)
+    finally:
+        httpx.Client = original  # type: ignore[assignment]
+
+    assert out["photo_id"] == "img001"
+    assert calls["upload"] == 3
+
+
+def test_upload_photo_reuses_thread_cached_auth(tmp_path: Path) -> None:
+    _clear_thread_auth_cache_for_tests()
+    calls = {"login": 0, "upload": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/api/admin/login":
+            calls["login"] += 1
+            return httpx.Response(200, json={"access_token": "acc", "refresh_token": "ref"})
+
+        if request.url.path == "/api/admin/events/1/photos":
+            calls["upload"] += 1
+            return httpx.Response(200, json={"photo_id": "img001", "kind": "proof"})
+
+        return httpx.Response(500, text="unexpected")
+
+    original = httpx.Client
+    httpx.Client = _mock_client(handler)  # type: ignore[assignment]
+    try:
+        f = tmp_path / "img001.jpg"
+        f.write_bytes(b"\xff\xd8\xff\xe0test")
+        upload_photo("http://local", "secret", 1, "img001", "proof", f)
+        upload_photo("http://local", "secret", 1, "img001", "proof", f)
+    finally:
+        httpx.Client = original  # type: ignore[assignment]
+
+    assert calls["upload"] == 2
+    assert calls["login"] == 1

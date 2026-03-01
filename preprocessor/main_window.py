@@ -5,10 +5,13 @@ from PySide6.QtCore import Qt, QSettings
 from PySide6.QtWidgets import (
     QApplication,
     QHBoxLayout,
+    QLabel,
     QMainWindow,
+    QPushButton,
     QSplitter,
     QStatusBar,
     QTabWidget,
+    QVBoxLayout,
     QWidget,
 )
 
@@ -17,7 +20,13 @@ from preprocessor.tabs.import_tab import ImportTab
 from preprocessor.tabs.process_tab import ProcessTab
 from preprocessor.tabs.bibs_tab import BibsTab
 from preprocessor.tabs.deploy_tab import DeployTab
-from preprocessor.workflow_state import WorkflowState, create_initial_state
+from preprocessor.workflow_state import (
+    STEP_ORDER,
+    WorkflowState,
+    WorkflowStep,
+    can_navigate_to,
+    create_initial_state,
+)
 
 
 class MainWindow(QMainWindow):
@@ -48,10 +57,33 @@ class MainWindow(QMainWindow):
         self.sidebar.setMaximumWidth(300)
         splitter.addWidget(self.sidebar)
 
-        # Tab area
+        # Main area: workflow stepper + tabs
+        main_area = QWidget()
+        main_layout = QVBoxLayout(main_area)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.setSpacing(0)
+
+        self._step_buttons: dict[WorkflowStep, QPushButton] = {}
+        self._step_indicator = QWidget()
+        step_layout = QHBoxLayout(self._step_indicator)
+        step_layout.setContentsMargins(10, 8, 10, 8)
+        step_layout.setSpacing(6)
+
+        for step in STEP_ORDER:
+            btn = QPushButton()
+            btn.setProperty("secondary", True)
+            btn.clicked.connect(lambda _checked=False, s=step: self._on_step_requested(s))
+            step_layout.addWidget(btn)
+            self._step_buttons[step] = btn
+
+        step_layout.addStretch()
+
         self.tabs = QTabWidget()
         self.tabs.setDocumentMode(True)
-        splitter.addWidget(self.tabs)
+
+        main_layout.addWidget(self._step_indicator)
+        main_layout.addWidget(self.tabs, 1)
+        splitter.addWidget(main_area)
 
         splitter.setStretchFactor(0, 0)
         splitter.setStretchFactor(1, 1)
@@ -68,6 +100,8 @@ class MainWindow(QMainWindow):
         self.tabs.addTab(self.bibs_tab, "  Bibs  ")
         self.tabs.addTab(self.deploy_tab, "  Deploy  ")
 
+        self._sync_workflow_ui()
+
         # ── Status bar ────────────────────────────────────────────────────────
         self._status = QStatusBar()
         self.setStatusBar(self._status)
@@ -77,6 +111,48 @@ class MainWindow(QMainWindow):
 
     def set_status(self, message: str) -> None:
         self._status.showMessage(message)
+
+    def _step_to_tab_index(self, step: WorkflowStep) -> int | None:
+        mapping = {
+            WorkflowStep.IMPORT: 0,
+            WorkflowStep.PREPARE: 1,
+            WorkflowStep.PROCESS: 1,
+            WorkflowStep.REVIEW: 2,
+            WorkflowStep.DEPLOY: 3,
+        }
+        return mapping.get(step)
+
+    def _status_label(self, step: WorkflowStep) -> str:
+        label = str(self._workflow_state.step_status[step]).replace("_", " ")
+        return f"{step.value.title()} · {label}"
+
+    def _sync_workflow_ui(self) -> None:
+        for step in STEP_ORDER:
+            button = self._step_buttons[step]
+            button.setText(self._status_label(step))
+            button.setEnabled(can_navigate_to(self._workflow_state, step) or step == self._workflow_state.current_step)
+
+        active = self._step_to_tab_index(self._workflow_state.current_step)
+        if active is not None:
+            self.tabs.setCurrentIndex(active)
+
+    def _on_step_requested(self, step: WorkflowStep) -> None:
+        if not can_navigate_to(self._workflow_state, step):
+            self.set_status("Complete the current step before moving forward.")
+            return
+
+        self._workflow_state.current_step = step
+        self._sync_workflow_ui()
+
+    def set_workflow_step_complete(self, step: WorkflowStep) -> None:
+        from preprocessor.workflow_state import mark_step_complete
+
+        mark_step_complete(self._workflow_state, step)
+        self._sync_workflow_ui()
+
+    def set_workflow_step_status(self, step: WorkflowStep, status: str) -> None:
+        self._workflow_state.step_status[step] = status  # type: ignore[assignment]
+        self._sync_workflow_ui()
 
     def get_event_slug(self) -> str:
         return self.sidebar.slug_input.text().strip()
@@ -91,6 +167,10 @@ class MainWindow(QMainWindow):
     @property
     def workflow_state(self) -> WorkflowState:
         return self._workflow_state
+
+    @property
+    def workflow_step_buttons(self) -> dict[WorkflowStep, QPushButton]:
+        return self._step_buttons
 
     def toggle_theme(self) -> None:
         """Switch between dark and light themes and persist the choice."""

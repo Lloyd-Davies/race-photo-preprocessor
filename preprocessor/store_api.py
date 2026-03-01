@@ -13,6 +13,32 @@ import httpx
 _RATE_LIMIT_MAX_RETRIES = 6
 _RATE_LIMIT_BASE_DELAY_SECONDS = 0.5
 _THREAD_AUTH = threading.local()
+_THREAD_CLIENT = threading.local()
+
+
+def _get_thread_client(timeout: float = 120.0) -> httpx.Client:
+    """Return a long-lived per-thread httpx.Client, creating one when needed.
+
+    Reusing a single client per thread keeps the underlying TCP+TLS connection
+    alive between photo uploads, which eliminates per-request handshake overhead
+    and dramatically reduces latency for bulk uploads.
+    """
+    client: httpx.Client | None = getattr(_THREAD_CLIENT, "http_client", None)
+    if client is None or client.is_closed:
+        client = httpx.Client(timeout=timeout)
+        _THREAD_CLIENT.http_client = client
+    return client
+
+
+def _close_thread_client_for_tests() -> None:
+    """Test helper: close and discard the per-thread client."""
+    client: httpx.Client | None = getattr(_THREAD_CLIENT, "http_client", None)
+    if client is not None and not client.is_closed:
+        try:
+            client.close()
+        except Exception:
+            pass
+    _THREAD_CLIENT.http_client = None
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -348,20 +374,24 @@ def upload_photo(
 
     Uses multipart/form-data. Content-Type is NOT set in auth headers so
     httpx can inject the correct multipart boundary automatically.
+
+    The underlying httpx.Client is kept alive for the lifetime of the calling
+    thread (via _get_thread_client) so that TCP/TLS connections are reused
+    across sequential uploads within the same worker thread, avoiding
+    per-request handshake overhead during bulk operations.
     """
     with file_path.open("rb") as fh:
-        resp_data: dict[str, Any] = {}
-        with httpx.Client(timeout=120.0) as client:
-            ctx = _authenticate(client, base_url, token, use_thread_cache=True)
-            resp = _request_authed(
-                client,
-                base_url,
-                ctx,
-                "POST",
-                f"/api/admin/events/{event_id}/photos",
-                include_content_type=False,
-                data={"photo_id": photo_id, "kind": kind},
-                files={"file": (file_path.name, fh, "image/jpeg")},
-            )
-            resp_data = resp.json()
+        client = _get_thread_client(timeout=120.0)
+        ctx = _authenticate(client, base_url, token, use_thread_cache=True)
+        resp = _request_authed(
+            client,
+            base_url,
+            ctx,
+            "POST",
+            f"/api/admin/events/{event_id}/photos",
+            include_content_type=False,
+            data={"photo_id": photo_id, "kind": kind},
+            files={"file": (file_path.name, fh, "image/jpeg")},
+        )
+        resp_data = resp.json()
     return resp_data if isinstance(resp_data, dict) else {}

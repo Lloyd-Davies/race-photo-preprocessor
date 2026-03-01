@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
 )
 
 from preprocessor.sidebar import Sidebar
+from preprocessor.session_step import SessionStep
 from preprocessor.tabs.import_tab import ImportTab
 from preprocessor.tabs.process_tab import ProcessTab
 from preprocessor.tabs.bibs_tab import BibsTab
@@ -80,6 +81,7 @@ class MainWindow(QMainWindow):
 
         self.tabs = QTabWidget()
         self.tabs.setDocumentMode(True)
+        self.tabs.tabBar().hide()
 
         main_layout.addWidget(self._step_indicator)
         main_layout.addWidget(self.tabs, 1)
@@ -117,11 +119,13 @@ class MainWindow(QMainWindow):
         splitter.setSizes([240, 1040])
 
         # ── Tabs ──────────────────────────────────────────────────────────────
+        self.session_step = SessionStep(self)
         self.import_tab = ImportTab(self)
         self.process_tab = ProcessTab(self)
         self.bibs_tab = BibsTab(self)
         self.deploy_tab = DeployTab(self)
 
+        self.tabs.addTab(self.session_step, "  Session  ")
         self.tabs.addTab(self.import_tab, "  Import  ")
         self.tabs.addTab(self.process_tab, "  Process  ")
         self.tabs.addTab(self.bibs_tab, "  Bibs  ")
@@ -141,11 +145,12 @@ class MainWindow(QMainWindow):
 
     def _step_to_tab_index(self, step: WorkflowStep) -> int | None:
         mapping = {
-            WorkflowStep.IMPORT: 0,
-            WorkflowStep.PREPARE: 1,
-            WorkflowStep.PROCESS: 1,
-            WorkflowStep.REVIEW: 2,
-            WorkflowStep.DEPLOY: 3,
+            WorkflowStep.SESSION: 0,
+            WorkflowStep.IMPORT: 1,
+            WorkflowStep.PREPARE: 2,
+            WorkflowStep.PROCESS: 2,
+            WorkflowStep.REVIEW: 3,
+            WorkflowStep.DEPLOY: 4,
         }
         return mapping.get(step)
 
@@ -184,6 +189,11 @@ class MainWindow(QMainWindow):
         from preprocessor.workflow_state import mark_step_complete
 
         mark_step_complete(self._workflow_state, step)
+        self._sync_workflow_ui()
+
+    def complete_session(self) -> None:
+        self.set_workflow_step_complete(WorkflowStep.SESSION)
+        self._workflow_state.current_step = WorkflowStep.IMPORT
         self._sync_workflow_ui()
 
     def set_workflow_step_status(self, step: WorkflowStep, status: str) -> None:

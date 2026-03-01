@@ -17,12 +17,14 @@ from preprocessor.tabs.import_tab import ImportTab
 from preprocessor.tabs.process_tab import ProcessTab
 from preprocessor.tabs.bibs_tab import BibsTab
 from preprocessor.tabs.deploy_tab import DeployTab
+from preprocessor.workflow_state import WorkflowState, create_initial_state
 
 
 class MainWindow(QMainWindow):
     def __init__(self, dark_mode: bool = True) -> None:
         super().__init__()
         self._dark_mode = dark_mode
+        self._workflow_state: WorkflowState = create_initial_state()
         self.setWindowTitle("Race Photo Preprocessor")
         self.resize(1280, 800)
         self.setMinimumSize(900, 600)
@@ -85,6 +87,10 @@ class MainWindow(QMainWindow):
     @property
     def dark_mode(self) -> bool:
         return self._dark_mode
+
+    @property
+    def workflow_state(self) -> WorkflowState:
+        return self._workflow_state
 
     def toggle_theme(self) -> None:
         """Switch between dark and light themes and persist the choice."""

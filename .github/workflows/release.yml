@@ -42,6 +42,13 @@ jobs:
           pip install ".[dev]"
           pip install pyinstaller pillow
 
+      - name: Run tests
+        shell: pwsh
+        env:
+          QT_QPA_PLATFORM: offscreen
+          QT_DEBUG_PLUGINS: "0"
+        run: python -m pytest tests/ -q --tb=short -p no:faulthandler
+
       - name: Generate executable icon
         shell: pwsh
         run: |

@@ -143,7 +143,10 @@ class DeployWorker(QThread):
         if event_id is None:
             self.finished.emit(
                 False,
-                f"Event '{slug}' not found in the store. Create it first via the store admin.",
+                (
+                    f"Connected to the store, but event '{slug}' was not found. "
+                    "Create the event in store admin first, then upload again."
+                ),
             )
             return
         self._emit_log(f"Event ID: {event_id}")

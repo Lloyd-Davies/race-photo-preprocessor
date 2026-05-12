@@ -6,6 +6,20 @@ from pathlib import Path
 import pytest
 
 
+@pytest.fixture(autouse=True)
+def reset_store_api_thread_state():
+    from preprocessor.store_api import (
+        _clear_thread_auth_cache_for_tests,
+        _close_thread_client_for_tests,
+    )
+
+    _clear_thread_auth_cache_for_tests()
+    _close_thread_client_for_tests()
+    yield
+    _clear_thread_auth_cache_for_tests()
+    _close_thread_client_for_tests()
+
+
 @pytest.fixture
 def sample_jpeg(tmp_path: Path) -> Path:
     """Create a minimal valid JPEG file (1×1 white pixel)."""

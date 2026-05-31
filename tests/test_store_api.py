@@ -5,6 +5,7 @@ from pathlib import Path
 
 from preprocessor.store_api import (
     _clear_thread_auth_cache_for_tests,
+    _user_error,
     find_event_id_by_slug,
     get_uploaded_photo_ids,
     list_admin_events,
@@ -94,6 +95,22 @@ def test_upload_bib_tags() -> None:
         httpx.Client = original_client  # type: ignore[assignment]
 
     assert out["added"] == 2
+
+
+def test_user_error_includes_400_detail() -> None:
+    request = httpx.Request("POST", "http://local/api/admin/events/11/tags/bibs")
+    response = httpx.Response(
+        400,
+        json={"detail": "Bib tag upload contains photo_id values not found in this event: DSC_001"},
+        request=request,
+    )
+    exc = httpx.HTTPStatusError("bad request", request=request, response=response)
+
+    message = _user_error(exc)
+
+    assert "Bad request" in message
+    assert "DSC_001" in message
+    assert "not found in this event" in message
 
 
 # ── list_admin_events ─────────────────────────────────────────────────────────

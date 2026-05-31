@@ -175,11 +175,42 @@ def get_proof_quality() -> int:
 def set_proof_quality(v: int) -> None:
     _s().setValue("process/proof_quality", v)
 
+def get_proof_jpeg_mode() -> str:
+    value = str(_s().value("process/proof_jpeg_mode", "fast"))
+    return value if value in {"fast", "compat"} else "fast"
+
+def set_proof_jpeg_mode(v: str) -> None:
+    _s().setValue("process/proof_jpeg_mode", v if v in {"fast", "compat"} else "fast")
+
 def get_skip_existing() -> bool:
     return _s().value("process/skip_existing", True, type=bool)  # type: ignore[call-overload]
 
 def set_skip_existing(v: bool) -> None:
     _s().setValue("process/skip_existing", v)
+
+def get_proof_worker_count() -> int:
+    """0 = auto (cpu-1). Positive value = explicit proof processing thread count."""
+    return int(_s().value("process/proof_worker_count", 0))  # type: ignore[arg-type]
+
+def set_proof_worker_count(v: int) -> None:
+    _s().setValue("process/proof_worker_count", v)
+
+def get_ocr_worker_count() -> int:
+    """0 = auto (cpu-1). Positive value = explicit OCR thread count."""
+    legacy = _s().value("ocr/worker_count", None)
+    if legacy is None:
+        return int(_s().value("process/worker_count", 0))  # type: ignore[arg-type]
+    return int(legacy)  # type: ignore[arg-type]
+
+def set_ocr_worker_count(v: int) -> None:
+    _s().setValue("ocr/worker_count", v)
+
+def get_ocr_device() -> str:
+    value = str(_s().value("ocr/device", "auto"))
+    return value if value in {"auto", "cpu", "cuda"} else "auto"
+
+def set_ocr_device(v: str) -> None:
+    _s().setValue("ocr/device", v if v in {"auto", "cpu", "cuda"} else "auto")
 
 def get_worker_count() -> int:
     """0 = auto (cpu-1).  Positive value = explicit thread count."""

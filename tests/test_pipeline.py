@@ -201,31 +201,95 @@ def test_watermark_pattern_affects_multiple_regions(large_jpeg: Path, tmp_path: 
     assert br > 0, "Bottom-right should show watermark pattern"
 
 
-def test_proof_preserves_capture_datetime_exif(tmp_path: Path) -> None:
-    """Proof output must retain capture datetime EXIF tags for downstream time filters."""
+@pytest.mark.parametrize("jpeg_mode", ["fast", "compat"])
+def test_proof_preserves_nested_capture_datetime_exif(tmp_path: Path, jpeg_mode: str) -> None:
+    """Proof output must retain camera capture time, not export time."""
     from PIL import Image
 
     source = tmp_path / "source.jpg"
     output = tmp_path / "output"
 
     exif = Image.Exif()
-    exif[0x9003] = "2026:02:21 09:12:34"  # DateTimeOriginal
-    exif[0x9004] = "2026:02:21 09:12:34"  # DateTimeDigitized
-    exif[0x0132] = "2026:02:21 09:12:34"  # DateTime
+    exif[0x0132] = "2026:05:31 09:46:43"  # DateTime/export time
+    exif[0x8769] = {
+        0x9003: "2026:05:30 16:57:24",  # DateTimeOriginal/capture time
+        0x9004: "2026:05:30 16:57:24",  # DateTimeDigitized
+        0x9010: "+01:00",               # OffsetTime
+        0x9011: "+01:00",               # OffsetTimeOriginal
+        0x9012: "+01:00",               # OffsetTimeDigitized
+        0x9291: "45",                   # SubSecTimeOriginal
+    }
 
     img = Image.new("RGB", (2200, 1460), (140, 130, 120))
     img.save(source, format="JPEG", exif=exif.tobytes())
 
-    config = ProcessConfig(event_slug="ev", output_root=output, proof_size=1600)
+    config = ProcessConfig(
+        event_slug="ev",
+        output_root=output,
+        proof_size=1600,
+        proof_jpeg_mode=jpeg_mode,
+    )
     result = process_photo(str(source), config)
     assert result.success
 
     proof = output / "proofs" / "ev" / "source.jpg"
     proof_exif = Image.open(proof).getexif()
+    proof_sub_ifd = proof_exif.get_ifd(0x8769)
 
-    assert proof_exif.get(0x9003) == "2026:02:21 09:12:34"
-    assert proof_exif.get(0x9004) == "2026:02:21 09:12:34"
-    assert proof_exif.get(0x0132) == "2026:02:21 09:12:34"
+    assert proof_exif.get(0x0132) == "2026:05:30 16:57:24"
+    assert proof_sub_ifd.get(0x9003) == "2026:05:30 16:57:24"
+    assert proof_sub_ifd.get(0x9004) == "2026:05:30 16:57:24"
+    assert proof_sub_ifd.get(0x9010) == "+01:00"
+    assert proof_sub_ifd.get(0x9011) == "+01:00"
+    assert proof_sub_ifd.get(0x9012) == "+01:00"
+    assert proof_sub_ifd.get(0x9291) == "45"
+
+
+def test_fast_jpeg_mode_writes_baseline_proof(large_jpeg: Path, tmp_path: Path) -> None:
+    from PIL import Image
+
+    output = tmp_path / "output"
+    config = ProcessConfig(
+        event_slug="ev",
+        output_root=output,
+        proof_jpeg_mode="fast",
+    )
+
+    result = process_photo(str(large_jpeg), config)
+
+    assert result.success
+    proof = output / "proofs" / "ev" / "large.jpg"
+    info = Image.open(proof).info
+    assert not (info.get("progressive") or info.get("progression"))
+
+
+def test_compat_jpeg_mode_keeps_progressive_proof(large_jpeg: Path, tmp_path: Path) -> None:
+    from PIL import Image
+
+    output = tmp_path / "output"
+    config = ProcessConfig(
+        event_slug="ev",
+        output_root=output,
+        proof_jpeg_mode="compat",
+    )
+
+    result = process_photo(str(large_jpeg), config)
+
+    assert result.success
+    proof = output / "proofs" / "ev" / "large.jpg"
+    info = Image.open(proof).info
+    assert info.get("progressive") or info.get("progression")
+
+
+def test_process_result_includes_stage_timings(large_jpeg: Path, tmp_path: Path) -> None:
+    output = tmp_path / "output"
+    config = ProcessConfig(event_slug="ev", output_root=output)
+
+    result = process_photo(str(large_jpeg), config)
+
+    assert result.success
+    assert result.timings["total"] > 0
+    assert "watermark" in result.timings
 
 
 def test_auto_bib_scan_scaffold_is_noop(photo_folder: Path, tmp_path: Path) -> None:

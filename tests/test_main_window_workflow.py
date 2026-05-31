@@ -5,6 +5,7 @@ from pathlib import Path
 from pytestqt.plugin import QtBot  # type: ignore[import]
 
 from preprocessor.main_window import MainWindow
+from preprocessor.pipeline import ProcessConfig, ProcessResult
 from preprocessor.workflow_state import WorkflowStep
 
 
@@ -210,6 +211,33 @@ def test_process_success_moves_to_review(qtbot: QtBot) -> None:
 
     assert window.workflow_state.step_status[WorkflowStep.PROCESS] == "complete"
     assert window.workflow_state.current_step == WorkflowStep.REVIEW
+
+
+def test_process_file_done_saves_auto_bibs_under_result_photo_id(
+    monkeypatch,
+    qtbot: QtBot,
+    tmp_path: Path,
+) -> None:
+    window = MainWindow(dark_mode=True)
+    qtbot.addWidget(window)
+
+    calls: list[tuple[str, list[str]]] = []
+    monkeypatch.setattr(
+        window.bibs_tab,
+        "add_scanned_bibs",
+        lambda photo_id, bibs, _confidence=1.0: calls.append((photo_id, bibs)),
+    )
+    window.process_tab._config = ProcessConfig(event_slug="race-a", output_root=tmp_path)
+
+    result = ProcessResult(
+        source=str(tmp_path / "DSC_001.jpg"),
+        success=True,
+        photo_id="race-a-0001",
+        bib_candidates=["42"],
+    )
+    window.process_tab._on_file_done(result)
+
+    assert calls == [("race-a-0001", ["42"])]
 
 
 def test_review_primary_action_moves_to_deploy(qtbot: QtBot) -> None:

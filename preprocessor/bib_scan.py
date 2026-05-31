@@ -54,7 +54,16 @@ def scan_bibs_for_photo(photo_path: str, config: "ProcessConfig") -> list[BibDet
 
     detections: list[BibDetection] = []
     seen: set[str] = set()
-    candidates = extract_text_candidates(photo_path, backend=config.auto_bib_scan_backend)
+    try:
+        candidates = extract_text_candidates(
+            photo_path,
+            backend=config.auto_bib_scan_backend,
+            device=config.ocr_device,
+        )
+    except TypeError:
+        # Compatibility with tests or external callers monkeypatching the old
+        # two-argument OCR adapter.
+        candidates = extract_text_candidates(photo_path, backend=config.auto_bib_scan_backend)
 
     for candidate in candidates:
         if candidate.confidence < min_conf:

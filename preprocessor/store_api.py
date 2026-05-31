@@ -231,10 +231,34 @@ def _request_authed(
         return resp
 
 
+def _response_detail(resp: httpx.Response) -> str:
+    if not resp.content:
+        return ""
+
+    try:
+        data = resp.json()
+    except Exception:
+        return resp.text.strip()
+
+    if isinstance(data, dict):
+        detail = data.get("detail")
+        if isinstance(detail, str):
+            return detail.strip()
+        if detail is not None:
+            return str(detail).strip()
+    if isinstance(data, str):
+        return data.strip()
+    return resp.text.strip()
+
+
 def _user_error(exc: Exception) -> str:
     """Convert an httpx or network exception into a readable message."""
     if isinstance(exc, httpx.HTTPStatusError):
         code = exc.response.status_code
+        detail = _response_detail(exc.response)
+        suffix = f" {detail}" if detail else ""
+        if code == 400:
+            return f"Bad request.{suffix}"
         if code == 401:
             return "Unauthorised — check your admin credential."
         if code == 429:
@@ -243,6 +267,8 @@ def _user_error(exc: Exception) -> str:
             return "Forbidden — token does not have admin access."
         if code == 404:
             return "Not found — check the store URL."
+        if detail:
+            return f"Server returned {code}. {detail}"
         return f"Server returned {code}."
     if isinstance(exc, httpx.ConnectError):
         return "Could not connect — check the URL and that the store is reachable."
@@ -329,13 +355,19 @@ def find_event_id_by_slug(base_url: str, token: str, slug: str) -> int | None:
 def get_uploaded_photo_ids(base_url: str, token: str, event_id: int) -> set[str]:
     """Return the set of photo_id stems already on the store for *event_id*."""
     try:
-        with httpx.Client(timeout=20.0) as client:
-            ctx = _authenticate(client, base_url, token)
-            resp = _request_authed(client, base_url, ctx, "GET", f"/api/admin/events/{event_id}/photo_ids")
-            data = resp.json()
-        return set(data.get("photo_ids", []))
+        return get_uploaded_photo_ids_strict(base_url, token, event_id)
     except Exception:
         return set()
+
+
+def get_uploaded_photo_ids_strict(base_url: str, token: str, event_id: int) -> set[str]:
+    """Return uploaded photo IDs for an event, allowing API/network errors to raise."""
+    with httpx.Client(timeout=20.0) as client:
+        ctx = _authenticate(client, base_url, token)
+        resp = _request_authed(client, base_url, ctx, "GET", f"/api/admin/events/{event_id}/photo_ids")
+        data = resp.json()
+    values = data.get("photo_ids", []) if isinstance(data, dict) else []
+    return {str(photo_id) for photo_id in values}
 
 
 def upload_bib_tags(

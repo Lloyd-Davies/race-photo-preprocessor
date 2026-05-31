@@ -1,17 +1,25 @@
 """Bibs tab — bib scan review and upload."""
 from __future__ import annotations
 
+import csv
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 import preprocessor.config as cfg
+from preprocessor.bib_ocr import describe_ocr_runtime
 from preprocessor.bib_results import bib_csv_path, ensure_bib_csv, load_bib_rows, merge_and_save_bibs
 from preprocessor.pipeline import ProcessConfig
-from preprocessor.store_api import find_event_id_by_slug, upload_bib_tags
+from preprocessor.store_api import (
+    _user_error,
+    find_event_id_by_slug,
+    get_uploaded_photo_ids_strict,
+    upload_bib_tags,
+)
 from preprocessor.workers.bib_ocr_worker import BibOcrWorker
 
 from PySide6.QtWidgets import (
     QAbstractItemView,
+    QComboBox,
     QHBoxLayout,
     QHeaderView,
     QLabel,
@@ -68,15 +76,26 @@ class BibsTab(QWidget):
         _cpu = _os.cpu_count() or 8
         self._workers_spin = QSpinBox()
         self._workers_spin.setRange(0, _cpu)
-        self._workers_spin.setValue(cfg.get_worker_count())
+        self._workers_spin.setValue(cfg.get_ocr_worker_count())
         self._workers_spin.setSpecialValueText("Auto")
         self._workers_spin.setToolTip(
             "Number of parallel threads for OCR scanning.\n"
             "'Auto' uses cpu_count−1.  Higher = faster but more CPU usage."
         )
         self._workers_spin.setFixedWidth(72)
-        self._workers_spin.valueChanged.connect(cfg.set_worker_count)
+        self._workers_spin.valueChanged.connect(cfg.set_ocr_worker_count)
         _workers_label = QLabel("Workers:")
+
+        self._device_combo = QComboBox()
+        self._device_combo.addItem("Auto", "auto")
+        self._device_combo.addItem("CPU", "cpu")
+        self._device_combo.addItem("CUDA", "cuda")
+        device_idx = max(0, self._device_combo.findData(cfg.get_ocr_device()))
+        self._device_combo.setCurrentIndex(device_idx)
+        self._device_combo.currentIndexChanged.connect(self._on_device_changed)
+        self._runtime_label = QLabel()
+        self._runtime_label.setProperty("hint", True)
+        self._on_device_changed()
 
         top.addWidget(self._load_btn)
         top.addWidget(self._run_ocr_btn)
@@ -85,6 +104,9 @@ class BibsTab(QWidget):
         top.addSpacing(12)
         top.addWidget(_workers_label)
         top.addWidget(self._workers_spin)
+        top.addWidget(QLabel("Device:"))
+        top.addWidget(self._device_combo)
+        top.addWidget(self._runtime_label)
         top.addStretch()
         top.addWidget(self._upload_btn)
         layout.addLayout(top)
@@ -122,6 +144,11 @@ class BibsTab(QWidget):
 
         self.reload_from_disk()
 
+    def _on_device_changed(self) -> None:
+        device = str(self._device_combo.currentData())
+        cfg.set_ocr_device(device)
+        self._runtime_label.setText(describe_ocr_runtime(device))
+
     # ── Helpers ─────────────────────────────────────────────────────────────
 
     def _event_slug(self) -> str:
@@ -136,7 +163,6 @@ class BibsTab(QWidget):
 
     def _load_rename_map(self, slug: str, output_root: str) -> dict[str, str]:
         """Return {original_filename_stem: photo_id} from _rename_map.csv, or {} if absent."""
-        import csv as _csv
         map_path = Path(output_root) / "originals" / slug / "_rename_map.csv"
         if not map_path.exists():
             return {}
@@ -144,7 +170,7 @@ class BibsTab(QWidget):
             with map_path.open("r", encoding="utf-8", newline="") as f:
                 return {
                     Path(row["original_name"]).stem: row["photo_id"]
-                    for row in _csv.DictReader(f)
+                    for row in csv.DictReader(f)
                 }
         except Exception:
             return {}
@@ -215,17 +241,52 @@ class BibsTab(QWidget):
                 rows.append({"photo_id": photo_id, "bib": bib, "confidence": confidence or "1.0"})
         return rows
 
-    def _save_current_table(self) -> None:
+    def _save_rows(self, rows: list[dict[str, str]]) -> None:
         path = self._csv_path()
         if path is None:
             return
-        rows = self._collect_rows()
         path.parent.mkdir(parents=True, exist_ok=True)
-        import csv
         with path.open("w", encoding="utf-8", newline="") as f:
             writer = csv.DictWriter(f, fieldnames=["photo_id", "bib", "confidence"])
             writer.writeheader()
             writer.writerows(rows)
+
+    def _save_current_table(self) -> None:
+        self._save_rows(self._collect_rows())
+
+    def _remap_rows_from_rename_map(
+        self,
+        rows: list[dict[str, str]],
+        uploaded_photo_ids: set[str],
+    ) -> tuple[list[dict[str, str]], int]:
+        slug = self._event_slug()
+        output_root = cfg.get_output_root().strip()
+        if not slug or not output_root:
+            return rows, 0
+
+        rename_map = self._load_rename_map(slug, output_root)
+        if not rename_map:
+            return rows, 0
+
+        remapped: list[dict[str, str]] = []
+        changed = 0
+        for row in rows:
+            photo_id = row["photo_id"]
+            mapped = rename_map.get(photo_id)
+            if photo_id not in uploaded_photo_ids and mapped in uploaded_photo_ids:
+                row = dict(row)
+                row["photo_id"] = mapped
+                changed += 1
+            remapped.append(row)
+        return remapped, changed
+
+    def _missing_photo_id_message(self, missing: list[str]) -> str:
+        preview = ", ".join(missing[:5])
+        suffix = "" if len(missing) <= 5 else ", ..."
+        return (
+            f"Upload blocked: {len(missing)} photo ID(s) are not in the store for this event: "
+            f"{preview}{suffix}. Upload/ingest photos first, then retry."
+        )
 
     def _remove_selected(self) -> None:
         selected = sorted({idx.row() for idx in self._table.selectedIndexes()}, reverse=True)
@@ -264,6 +325,7 @@ class BibsTab(QWidget):
             output_root=Path(output_root),
             auto_bib_scan_enabled=True,
             auto_bib_scan_backend=cfg.get_auto_bib_scan_backend(),
+            ocr_device=str(self._device_combo.currentData()),
             auto_bib_min_confidence=cfg.get_auto_bib_min_confidence(),
             auto_bib_enforce_min_digits=cfg.get_auto_bib_enforce_min_digits(),
             auto_bib_min_digits=cfg.get_auto_bib_min_digits(),
@@ -341,6 +403,22 @@ class BibsTab(QWidget):
             self._status.setText(f"Could not find event '{slug}' on store API.")
             return
 
+        try:
+            uploaded_photo_ids = get_uploaded_photo_ids_strict(base_url, token, event_id)
+        except Exception as exc:
+            self._status.setText(f"Upload failed: {_user_error(exc)}")
+            return
+
+        rows, remapped = self._remap_rows_from_rename_map(rows, uploaded_photo_ids)
+        if remapped:
+            self._save_rows(rows)
+            self.reload_from_disk()
+
+        missing = sorted({row["photo_id"] for row in rows} - uploaded_photo_ids)
+        if missing:
+            self._status.setText(self._missing_photo_id_message(missing))
+            return
+
         payload = []
         for row in rows:
             try:
@@ -352,6 +430,7 @@ class BibsTab(QWidget):
         try:
             result = upload_bib_tags(base_url, token, event_id=event_id, tags=payload)
             added = int(result.get("added", 0))
-            self._status.setText(f"Uploaded. Added {added} new bib tag(s).")
+            prefix = f"Remapped {remapped} bib row(s). " if remapped else ""
+            self._status.setText(f"{prefix}Uploaded. Added {added} new bib tag(s).")
         except Exception as exc:
-            self._status.setText(f"Upload failed: {exc}")
+            self._status.setText(f"Upload failed: {_user_error(exc)}")

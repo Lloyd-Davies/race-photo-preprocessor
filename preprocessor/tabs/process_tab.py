@@ -31,6 +31,7 @@ from PySide6.QtWidgets import (
 )
 
 import preprocessor.config as cfg
+from preprocessor.bib_ocr import describe_ocr_runtime
 from preprocessor.pipeline import ProcessConfig, ProcessResult
 from preprocessor.workers.process_worker import ProcessWorker
 from preprocessor.workers.deploy_worker import DeployWorker
@@ -100,6 +101,35 @@ class ProcessTab(QWidget):
         toolbar.addWidget(self._start_btn)
         toolbar.addWidget(self._stop_btn)
         toolbar.addWidget(self._overwrite_cb)
+
+        import os as _os
+        _cpu = _os.cpu_count() or 8
+        self._proof_workers_spin = QSpinBox()
+        self._proof_workers_spin.setRange(0, _cpu)
+        self._proof_workers_spin.setValue(cfg.get_proof_worker_count())
+        self._proof_workers_spin.setSpecialValueText("Auto")
+        self._proof_workers_spin.setToolTip(
+            "Number of parallel workers for proof generation.\n"
+            "'Auto' uses cpu_count-1 to keep the UI responsive."
+        )
+        self._proof_workers_spin.setFixedWidth(72)
+        self._proof_workers_spin.valueChanged.connect(cfg.set_proof_worker_count)
+        toolbar.addSpacing(12)
+        toolbar.addWidget(QLabel("Proof workers:"))
+        toolbar.addWidget(self._proof_workers_spin)
+
+        self._proof_jpeg_mode = QComboBox()
+        self._proof_jpeg_mode.addItem("Fast JPEG", "fast")
+        self._proof_jpeg_mode.addItem("Compat JPEG", "compat")
+        jpeg_mode_idx = max(0, self._proof_jpeg_mode.findData(cfg.get_proof_jpeg_mode()))
+        self._proof_jpeg_mode.setCurrentIndex(jpeg_mode_idx)
+        self._proof_jpeg_mode.setToolTip(
+            "Fast JPEG is quicker to save. Compat keeps the previous optimized/progressive output."
+        )
+        self._proof_jpeg_mode.currentIndexChanged.connect(
+            lambda: cfg.set_proof_jpeg_mode(str(self._proof_jpeg_mode.currentData()))
+        )
+        toolbar.addWidget(self._proof_jpeg_mode)
 
         self._auto_deploy_cb = QCheckBox("Auto-deploy after processing")
         self._auto_deploy_cb.setChecked(cfg.get_auto_deploy_after_process())
@@ -212,6 +242,20 @@ class ProcessTab(QWidget):
             lambda: cfg.set_auto_bib_scan_backend(str(self._bib_backend.currentData()))
         )
         bib_form.addRow("Backend", self._bib_backend)
+
+        self._ocr_device = QComboBox()
+        self._ocr_device.addItem("Auto", "auto")
+        self._ocr_device.addItem("CPU", "cpu")
+        self._ocr_device.addItem("CUDA", "cuda")
+        device_idx = max(0, self._ocr_device.findData(cfg.get_ocr_device()))
+        self._ocr_device.setCurrentIndex(device_idx)
+        self._ocr_device.currentIndexChanged.connect(self._on_ocr_device_changed)
+        bib_form.addRow("Device", self._ocr_device)
+
+        self._ocr_runtime_label = QLabel()
+        self._ocr_runtime_label.setProperty("hint", True)
+        bib_form.addRow(self._ocr_runtime_label)
+        self._on_ocr_device_changed()
 
         self._bib_min_conf = QSpinBox()
         self._bib_min_conf.setRange(1, 100)
@@ -348,9 +392,11 @@ class ProcessTab(QWidget):
             watermark_font_scale_pct=self._wm_font_scale.value(),
             proof_size=cfg.get_proof_size(),
             proof_quality=cfg.get_proof_quality(),
+            proof_jpeg_mode=str(self._proof_jpeg_mode.currentData()),
             skip_existing=not self._overwrite_cb.isChecked(),
             auto_bib_scan_enabled=self._bib_enabled.isChecked(),
             auto_bib_scan_backend=str(self._bib_backend.currentData()),
+            ocr_device=str(self._ocr_device.currentData()),
             auto_bib_min_confidence=self._bib_min_conf.value(),
             auto_bib_enforce_min_digits=self._bib_enforce_min_digits.isChecked(),
             auto_bib_min_digits=self._bib_min_digits.value(),
@@ -375,7 +421,7 @@ class ProcessTab(QWidget):
 
         self._worker = ProcessWorker(
             paths, self._config,
-            max_workers=cfg.get_worker_count() or None,
+            max_workers=cfg.get_proof_worker_count() or None,
         )
         self._worker.progress.connect(self._on_progress)
         self._worker.file_done.connect(self._on_file_done)
@@ -433,12 +479,12 @@ class ProcessTab(QWidget):
         self._table.scrollToBottom()
 
         if result.success and result.bib_candidates:
-            photo_id = Path(result.source).stem
+            photo_id = result.photo_id or Path(result.source).stem
             self._window.bibs_tab.add_scanned_bibs(photo_id, result.bib_candidates)
 
         # Update live preview with the proof just generated
         if result.success and not result.skipped and self._config is not None:
-            photo_id = Path(result.source).stem
+            photo_id = result.photo_id or Path(result.source).stem
             proof_path = (
                 self._config.output_root
                 / "proofs"
@@ -517,6 +563,11 @@ class ProcessTab(QWidget):
         self._wm_spacing_x.setEnabled(not single)
         self._wm_spacing_y.setEnabled(not single)
 
+    def _on_ocr_device_changed(self) -> None:
+        device = str(self._ocr_device.currentData())
+        cfg.set_ocr_device(device)
+        self._ocr_runtime_label.setText(describe_ocr_runtime(device))
+
     def _save_watermark_settings(self) -> None:
         cfg.set_watermark_text(self._wm_text.text().strip())
         cfg.set_watermark_opacity(self._wm_opacity.value())
@@ -528,6 +579,7 @@ class ProcessTab(QWidget):
         cfg.set_watermark_font_scale_pct(self._wm_font_scale.value())
         cfg.set_auto_bib_scan_enabled(self._bib_enabled.isChecked())
         cfg.set_auto_bib_scan_backend(str(self._bib_backend.currentData()))
+        cfg.set_ocr_device(str(self._ocr_device.currentData()))
         cfg.set_auto_bib_min_confidence(self._bib_min_conf.value())
         cfg.set_auto_bib_enforce_min_digits(self._bib_enforce_min_digits.isChecked())
         cfg.set_auto_bib_min_digits(self._bib_min_digits.value())

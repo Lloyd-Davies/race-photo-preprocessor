@@ -7,6 +7,7 @@ from pathlib import Path
 
 from PySide6.QtCore import QThread, Signal
 
+from preprocessor.bib_ocr import get_ocr_runtime_info
 from preprocessor.bib_scan import scan_bibs_for_photo
 from preprocessor.pipeline import ProcessConfig
 
@@ -45,6 +46,8 @@ class BibOcrWorker(QThread):
         self._stop_requested = True
 
     def _worker_count(self, total: int) -> int:
+        if get_ocr_runtime_info(self._config.ocr_device).selected_device == "cuda":
+            return 1
         if self._max_workers is not None and self._max_workers > 0:
             return min(self._max_workers, total)
         cpu = os.cpu_count() or 4

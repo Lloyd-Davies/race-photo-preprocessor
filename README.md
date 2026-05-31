@@ -18,6 +18,11 @@ It imports camera files, generates watermarked proof JPEGs, keeps full-resolutio
   - spacing X / spacing Y
   - font scale
   - position (single-corner mode)
+- Performance controls:
+  - dedicated proof worker count
+  - fast or compatibility proof JPEG output
+  - dedicated OCR worker count
+  - OCR device mode (`Auto`, `CPU`, `CUDA`)
 - Light/dark theme toggle (persisted via QSettings)
 - Persisted project settings (event, output paths, API details)
 
@@ -66,6 +71,30 @@ Run tests:
 
 ```bash
 python -m pytest -q
+```
+
+Benchmark a representative folder:
+
+```bash
+python scripts/benchmark_processing.py D:\photos\incoming --limit 100 --jpeg-mode fast
+python scripts/benchmark_processing.py D:\photos\incoming --ocr --ocr-device auto
+```
+
+## Performance notes
+
+Proof generation uses CPU workers. `Fast JPEG` skips the previous optimized/progressive
+JPEG save path, which is usually much faster while keeping the same proof dimensions,
+quality setting, watermark, and capture-time EXIF tags. `Compat JPEG` keeps the previous
+optimized/progressive behavior.
+
+OCR uses RapidOCR through ONNX Runtime. CPU OCR uses one OCR engine per worker thread.
+CUDA OCR is optional and only used when `CUDAExecutionProvider` is available; otherwise
+the app falls back to CPU. To enable CUDA OCR, install an ONNX Runtime GPU build that
+matches the machine's NVIDIA CUDA/cuDNN runtime, then confirm that
+`CUDAExecutionProvider` appears in:
+
+```bash
+python -c "import onnxruntime as ort; print(ort.get_available_providers())"
 ```
 
 ## Output model
